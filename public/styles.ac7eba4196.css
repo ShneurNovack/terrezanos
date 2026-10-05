@@ -72,7 +72,7 @@ section { padding-block: clamp(80px, 11vw, 160px); }
 .topbar .sep { opacity: 0.5; margin-inline: 10px; }
 @media (max-width: 720px) { .topbar .hide-sm { display: none; } }
 .masthead { background: var(--paper); border-bottom: 1px solid var(--rule); }
-.masthead .wrap { display: grid; justify-items: center; gap: 18px; padding-block: 30px 0; }
+.masthead .wrap { display: grid; justify-items: center; gap: 18px; padding-block: 30px 24px; }
 .wordmark { text-decoration: none; text-align: center; display: grid; gap: 8px; color: var(--ink); }
 .wordmark:hover { color: var(--ink); }
 .wordmark b { font: 400 clamp(2.1rem, 5vw, 3.2rem)/1 var(--display); letter-spacing: 0.12em; }
@@ -85,7 +85,7 @@ section { padding-block: clamp(80px, 11vw, 160px); }
 @media (max-width: 880px) {
   .nav .wrap { flex-wrap: nowrap; justify-content: flex-start; overflow-x: auto; scrollbar-width: none; gap: 26px; }
   .nav .wrap::-webkit-scrollbar { display: none; }
-  .masthead .wrap { padding-block: 22px 0; }
+  .masthead .wrap { padding-block: 22px 18px; }
 }
 
 /* Hero */

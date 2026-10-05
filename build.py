@@ -5,7 +5,7 @@
 
 All page content lives in this file. Shared CSS and JS live in src/, photos in src/img/.
 """
-import json, os, shutil, datetime
+import json, os, shutil, datetime, hashlib
 from html import escape
 from PIL import Image
 
@@ -16,6 +16,13 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 SRC, OUT = os.path.join(ROOT, "src"), os.path.join(ROOT, "public")
 SITE = "https://terrezanos.shneur.workers.dev"
 TODAY = datetime.date.today().isoformat()
+
+def fingerprint(name):
+    """styles.css -> styles.<hash>.css so a new deploy never pairs with an old cached file."""
+    data = open(os.path.join(SRC, name), "rb").read()
+    base, ext = os.path.splitext(name)
+    return f"{base}.{hashlib.md5(data).hexdigest()[:10]}{ext}"
+CSS_FILE, JS_FILE = fingerprint("styles.css"), fingerprint("site.js")
 
 PHONE, PHONE_INTL = "(212) 555-0930", "+1-212-555-0930"
 D_PHONE, D_PHONE_INTL = "(212) 555-0929", "+1-212-555-0929"
@@ -244,7 +251,7 @@ def page(path, title, desc, body, current=None, ld=None, crumbs=None, robots="in
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500&family=Libre+Caslon+Display&family=Libre+Caslon+Text:ital,wght@0,400;0,700;1,400&display=swap">
-<link rel="stylesheet" href="/styles.css">
+<link rel="stylesheet" href="/{CSS_FILE}">
 {chr(10).join(blocks)}
 </head>
 <body>
@@ -276,7 +283,7 @@ def page(path, title, desc, body, current=None, ld=None, crumbs=None, robots="in
     </div>
   </div>
 </footer>
-<script src="/site.js" defer></script>
+<script src="/{JS_FILE}" defer></script>
 </body>
 </html>
 '''
@@ -784,7 +791,8 @@ def build():
     for f in os.listdir(SRC):
         p = os.path.join(SRC, f)
         if os.path.isfile(p):
-            shutil.copy(p, OUT)
+            dest = {"styles.css": CSS_FILE, "site.js": JS_FILE}.get(f, f)
+            shutil.copy(p, os.path.join(OUT, dest))
     prio = {"/": "1.0", "/menu/": "0.9", "/reservations/": "0.9", "/domenicos/": "0.8", "/visit/": "0.8", "/chef-luigi/": "0.8"}
     sm = ['<?xml version="1.0" encoding="UTF-8"?>', '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
     sm += [f"  <url><loc>{SITE}{p}</loc><lastmod>{TODAY}</lastmod><priority>{prio.get(p, '0.6')}</priority></url>" for p in pages if p != "/404"]
@@ -792,7 +800,7 @@ def build():
     open(os.path.join(OUT, "sitemap.xml"), "w").write("\n".join(sm) + "\n")
     open(os.path.join(OUT, "robots.txt"), "w").write(f"User-agent: *\nAllow: /\n\nSitemap: {SITE}/sitemap.xml\n")
     open(os.path.join(OUT, "_redirects"), "w").write("/as-seen-on-snl/ /press/ 301\n/as-seen-on-snl /press/ 301\n/private-events/ /private-dining/ 301\n/private-events /private-dining/ 301\n")
-    open(os.path.join(OUT, "_headers"), "w").write("/*\n  X-Content-Type-Options: nosniff\n  Referrer-Policy: strict-origin-when-cross-origin\n/img/*\n  Cache-Control: public, max-age=2592000, immutable\n/*.css\n  Cache-Control: public, max-age=3600\n/*.js\n  Cache-Control: public, max-age=3600\n")
+    open(os.path.join(OUT, "_headers"), "w").write("/*\n  X-Content-Type-Options: nosniff\n  Referrer-Policy: strict-origin-when-cross-origin\n/img/*\n  Cache-Control: public, max-age=2592000, immutable\n/*.css\n  Cache-Control: public, max-age=31536000, immutable\n/*.js\n  Cache-Control: public, max-age=31536000, immutable\n/*.html\n  Cache-Control: no-cache\n")
     print(f"Built {len(pages)} pages")
 
 if __name__ == "__main__":
