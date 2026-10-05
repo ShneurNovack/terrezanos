@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://terrezanos.shneur.workers.dev/sitemap.xml
