@@ -1,7 +1,7 @@
 (function () {
   // Hero rotation
-  var figs = [].slice.call(document.querySelectorAll('#stage figure'));
-  var dots = [].slice.call(document.querySelectorAll('#stage .dots button'));
+  var figs = [].slice.call(document.querySelectorAll('.hero figure'));
+  var dots = [].slice.call(document.querySelectorAll('.hero .dots button'));
   if (figs.length) {
     var i = 0, timer = null;
     var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -34,7 +34,7 @@
       var sm = document.createElement('small');
       if (!name) {
         s.textContent = 'Add a name for the reservation.';
-        p.textContent = 'Luigi likes to know who he is cooking for.';
+        p.textContent = 'We like to know who we are cooking for.';
         box.append(s, p); nameEl && nameEl.focus(); return;
       }
       var kind = form.getAttribute('data-kind') || 'table';
@@ -43,12 +43,12 @@
       if (kind === 'event') {
         var size = form.querySelector('[name="size"]').value;
         s.textContent = 'Grazie, ' + name + '. Your event inquiry for ' + when + ' (' + size + ') is in.';
-        p.textContent = 'Our events team will call you back. Chef Luigi has already started thinking about the menu.';
+        p.textContent = 'Our events team will call you within two days with menus and availability.';
       } else {
         var party = form.querySelector('[name="party"]').value;
         var time = form.querySelector('[name="time"]').value;
         s.textContent = 'Grazie, ' + name + '. Table for ' + party + ' on ' + when + ' at ' + time + '.';
-        p.textContent = 'Chef Luigi has been told. He is very excited and definitely exists.';
+        p.textContent = 'We will hold the table for fifteen minutes. Chef Luigi will have the water salted.';
       }
       sm.textContent = 'Terrezano’s is a tribute site, so nothing was actually booked.';
       box.append(s, p, sm);

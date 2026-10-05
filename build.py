@@ -1,238 +1,217 @@
 #!/usr/bin/env python3
 """Builds the Terrezano's static site into ./public.
 
-Run: python3 build.py
-Every page shares one header, footer, stylesheet and script. Content lives in this file.
+    python3 build.py
+
+All page content lives in this file. Shared CSS and JS live in src/, photos in src/img/.
 """
 import json, os, shutil, datetime
 from html import escape
+from PIL import Image
 
 def esc(s):
-    # Attributes are always double-quoted, so apostrophes can stay readable.
     return escape(s).replace("&#x27;", "'")
 
+ROOT = os.path.dirname(os.path.abspath(__file__))
+SRC, OUT = os.path.join(ROOT, "src"), os.path.join(ROOT, "public")
 SITE = "https://terrezanos.shneur.workers.dev"
-NAME = "Terrezano's"
-PHONE = "(212) 555-0930"
-PHONE_INTL = "+1-212-555-0930"
-STREET = "43 Rockefeller Lane"
-CITY, REGION, ZIP = "New York", "NY", "10112"
-OUT = os.path.join(os.path.dirname(__file__), "public")
-SRC = os.path.join(os.path.dirname(__file__), "src")
 TODAY = datetime.date.today().isoformat()
 
-NAV = [
-    ("/menu/", "Menu"),
-    ("/our-story/", "Our Story"),
-    ("/chef-luigi/", "Chef Luigi"),
-    ("/private-events/", "Private Events"),
-    ("/visit/", "Hours & Location"),
-    ("/faq/", "FAQ"),
-]
+PHONE, PHONE_INTL = "(212) 555-0930", "+1-212-555-0930"
+D_PHONE, D_PHONE_INTL = "(212) 555-0929", "+1-212-555-0929"
+STREET, D_STREET = "43 Rockefeller Lane", "44 Rockefeller Lane"
+CITY, REGION, ZIP = "New York", "NY", "10112"
 
-HOURS = [
-    ("Monday", None, None),
-    ("Tuesday", "17:00", "22:00"), ("Wednesday", "17:00", "22:00"), ("Thursday", "17:00", "22:00"),
-    ("Friday", "17:00", "23:30"), ("Saturday", "17:00", "23:30"),
-    ("Sunday", "16:00", "21:00"),
-]
+NAV = [("/menu/", "Menu"), ("/our-story/", "Our Story"), ("/chef-luigi/", "Chef Luigi"),
+       ("/domenicos/", "Domenico's"), ("/private-dining/", "Private Dining"), ("/visit/", "Visit")]
 
-# ---------------------------------------------------------------- menu data
+HOURS = [("Monday", None, None), ("Tuesday", "17:00", "22:00"), ("Wednesday", "17:00", "22:00"),
+         ("Thursday", "17:00", "22:30"), ("Friday", "17:00", "23:30"), ("Saturday", "17:00", "25:00"),
+         ("Sunday", "16:00", "21:30")]
+D_HOURS = [("Monday", "07:00", "16:00"), ("Tuesday", "07:00", "16:00"), ("Wednesday", "07:00", "16:00"),
+           ("Thursday", "07:00", "16:00"), ("Friday", "07:00", "16:00"), ("Saturday", "08:00", "15:00"),
+           ("Sunday", "08:00", "15:00")]
+
+# ------------------------------------------------------------------ images
+_dims = {}
+def dims(path):
+    if path not in _dims:
+        with Image.open(os.path.join(SRC, "img", path)) as im:
+            _dims[path] = im.size
+    return _dims[path]
+
+def img(name, alt, sizes="100vw", eager=False, cls=""):
+    """Responsive <img> from src/img/<name>-<w>.jpg (two widths per photo)."""
+    files = sorted([f for f in os.listdir(os.path.join(SRC, "img")) if f.startswith(name + "-") and f[len(name)+1:-4].isdigit()],
+                   key=lambda f: int(f[len(name)+1:-4]))
+    small, large = files[0], files[-1]
+    w, h = dims(small)
+    srcset = ", ".join(f"/img/{f} {dims(f)[0]}w" for f in files)
+    load = 'fetchpriority="high"' if eager else 'loading="lazy"'
+    c = f' class="{cls}"' if cls else ""
+    return f'<img src="/img/{large}" srcset="{srcset}" sizes="{sizes}" width="{w}" height="{h}" alt="{esc(alt)}" decoding="async" {load}{c}>'
+
+def photo(name, alt, ratio="r-land", caption="", sizes="(max-width: 880px) 100vw, 50vw"):
+    cap = f"<figcaption>{caption}</figcaption>" if caption else ""
+    return f'<figure class="photo {ratio}">{img(name, alt, sizes)}{cap}</figure>'
+
+# ------------------------------------------------------------------ menus
 MENU = [
-    ("antipasti", "Antipasti", "Small plates for the table. Order three and share, the way Luigi's family did on Sundays.", [
-        ("Burrata Pugliese", 18, "", "Creamy burrata from Puglia, heirloom tomato, basil oil, grilled ciabatta.", ""),
-        ("Calamari Fritti", 17, "", "Rhode Island squid dusted in semolina, lemon aioli, our marinara for dipping.", ""),
-        ("Arancini della Casa", 14, "", "Saffron risotto, sweet peas, a molten mozzarella center, fried golden.", ""),
-        ("Breadsticks", 8, "Made here", "Baked in our own oven, brushed with garlic butter and parsley.", "Not from a box. Please stop checking the bottom of the basket."),
-        ("Insalata Caprese", 15, "", "Fior di latte, beefsteak tomato, aged balsamic, Sicilian sea salt.", ""),
-        ("Polpette della Nonna", 16, "", "Beef and pork meatballs braised in Sunday gravy, whipped ricotta.", ""),
-        ("Carpaccio di Manzo", 19, "", "Shaved beef tenderloin, arugula, capers, shaved Parmigiano, lemon.", ""),
-        ("Zuppa di Pomodoro", 12, "", "Roasted tomato soup, torn bread, a swirl of basil olive oil.", ""),
+    ("antipasti", "Antipasti", "To start, for the table.", [
+        ("Burrata con Pomodori", "Burrata from Puglia, heirloom tomatoes, basil oil, grilled country bread", 19, ""),
+        ("Calamari Fritti", "Rhode Island squid dusted in semolina, lemon, spicy marinara", 18, ""),
+        ("Vongole Oreganata", "Baked littleneck clams, garlic breadcrumb, oregano, lemon. Six to an order", 17, ""),
+        ("Polpette della Domenica", "Beef, pork and veal meatballs braised in Sunday ragù, whipped ricotta", 18, ""),
+        ("Carciofi Fritti", "Baby artichokes fried crisp, sea salt, lemon", 16, ""),
+        ("Grissini della Casa", "Breadsticks rolled every afternoon, garlic butter, parsley", 7, "Baked here. You are welcome to check."),
     ]),
-    ("pasta", "Pasta", "Rolled, cut and cooked every afternoon in our kitchen. Gluten-free rigatoni available for any pasta, plus $3.", [
-        ("Spaghetti al Pomodoro di Luigi", 24, "Signature", "San Marzano tomato, garlic confit, torn basil, Parmigiano-Reggiano.", "The dish that made two of our regulars cry, for reasons that are their own business."),
-        ("Rigatoni alla Vodka", 26, "", "Tomato cream, Calabrian chili, pecorino, a splash of good vodka.", ""),
-        ("Fettuccine Alfredo della Casa", 25, "", "Hand-cut ribbons, butter, cream and a mountain of Parmigiano. Add grilled chicken, plus $7.", ""),
-        ("Lasagna Bolognese", 28, "", "Twelve layers, slow-cooked beef and pork ragù, béchamel, baked to order.", ""),
-        ("Linguine alle Vongole", 29, "", "Littleneck clams, white wine, garlic, parsley, a little chili.", ""),
-        ("Tuscan Chicken Penne", 24, "", "Roasted chicken, sun-dried tomato, spinach, garlic cream.", "Served in a real bowl, from a real stove, by a real man named Luigi."),
-        ("Cacio e Pepe", 22, "", "Tonnarelli, Pecorino Romano, toasted black pepper. Three ingredients, no shortcuts.", ""),
-        ("Pappardelle al Ragù di Cinghiale", 31, "", "Wide ribbons, wild boar braised in Chianti, rosemary, juniper.", ""),
+    ("primi", "Primi", "Every pasta is made in our kitchen the afternoon it is served.", [
+        ("Spaghetti al Pomodoro", "San Marzano tomato, garlic, torn basil, Parmigiano-Reggiano", 26, "The first dish Nonna Rosa taught him."),
+        ("Ziti alla Genovese", "The Neapolitan onion ragù, beef chuck cooked down for eight hours, pecorino", 28, ""),
+        ("Paccheri al Ragù Napoletano", "Sunday ragù with braciole and pork rib, simmered until it barely bubbles", 29, ""),
+        ("Rigatoni alla Vodka", "Tomato cream, Calabrian chili, pecorino, a splash of vodka", 27, ""),
+        ("Pasta Primavera", "Spring vegetables, garlic, Parmigiano, a little cream", 24, "Two of our regulars say they will be ordering this all the time."),
+        ("Linguine alle Vongole", "Littleneck clams, white wine, garlic, parsley, chili", 31, ""),
+        ("Fettuccine Alfredo", "Hand-cut egg ribbons, butter, cream, a great deal of Parmigiano", 26, ""),
+        ("Lasagna della Nonna", "Twelve layers, ragù, béchamel, mozzarella, baked to order", 29, ""),
     ]),
-    ("secondi", "Secondi", "Mains from the grill and the oven. Each comes with roasted potatoes or a side of pasta al pomodoro.", [
-        ("Pollo alla Parmigiana", 31, "", "Pounded chicken breast, crisp crumb, marinara, melted mozzarella.", ""),
-        ("Branzino al Forno", 36, "", "Whole roasted Mediterranean sea bass, lemon, capers, fennel.", ""),
-        ("Vitello Piccata", 34, "", "Veal scallopini, lemon butter, capers, white wine.", ""),
-        ("Bistecca alla Fiorentina", 96, "For two", "Thirty-two ounce porterhouse, rosemary, olive oil, roasted potatoes.", ""),
-        ("Melanzane alla Parmigiana", 27, "Vegetarian", "Layered eggplant, basil, mozzarella, tomato, baked crisp at the edges.", ""),
-        ("One Pizza", 19, "Fine. Okay.", "A Margherita from our oven. We are a pasta restaurant. We have one pizza.", "It has nothing to do with anybody else's pizza. We would like to be very clear about that."),
+    ("secondi", "Secondi", "From the grill and the oven.", [
+        ("Pollo alla Parmigiana", "Pounded chicken breast, crisp crumb, marinara, fresh mozzarella", 33, ""),
+        ("Vitello alla Marsala", "Veal scallopini, cremini mushrooms, dry Marsala", 38, ""),
+        ("Branzino all'Acqua Pazza", "Whole sea bass poached in \"crazy water\" with tomato, garlic and parsley", 39, ""),
+        ("Melanzane alla Parmigiana", "Layered eggplant, basil, tomato, mozzarella, baked until crisp at the edges", 28, ""),
+        ("Bistecca alla Fiorentina", "Thirty-two ounce porterhouse for two, rosemary, olive oil, roasted potatoes", 110, ""),
     ]),
-    ("dolci", "Dolci", "Made in house every morning. Ask about the cannoli of the day.", [
-        ("Tiramisù", 12, "", "Espresso-soaked savoiardi, mascarpone, cocoa.", "Good enough to propose over, and people have."),
-        ("Cannoli Siciliani", 10, "", "Shells filled to order with sweet ricotta, pistachio, candied orange.", ""),
-        ("Panna Cotta", 11, "", "Vanilla bean, macerated strawberries, aged balsamic.", ""),
-        ("Affogato", 9, "", "Fior di latte gelato drowned in a double espresso.", ""),
+    ("contorni", "Contorni", "", [
+        ("Broccoli di Rapa", "Broccoli rabe, garlic, chili, olive oil", 11, ""),
+        ("Patate al Forno", "Roasted potatoes, rosemary, sea salt", 10, ""),
+        ("Scarola Saltata", "Escarole, garlic, Gaeta olives, pine nuts", 11, ""),
+        ("Spaghetti, side", "A half portion of the pomodoro", 12, ""),
     ]),
-    ("vino", "Vino e Bevande", "Glass and bottle prices. Corkage is $30 per bottle, two bottles per table.", [
-        ("Chianti Classico", "14 / 52", "", "Tuscany. Cherry, leather, the bottle your candle came from.", ""),
-        ("Montepulciano d'Abruzzo", "13 / 48", "", "Abruzzo. Plum and spice, a friend to red sauce.", ""),
-        ("Pinot Grigio delle Venezie", "12 / 44", "", "Veneto. Crisp pear and lemon.", ""),
-        ("Prosecco Superiore", "13 / 50", "", "Valdobbiadene. For the engagement at table six.", ""),
-        ("Limoncello della Casa", 9, "", "Made in house from Amalfi lemons. Served ice cold.", ""),
-        ("Fountain Soda", "n/a", "", "We do not have a fountain. We have San Pellegrino and Chinotto.", "Please do not ask for a two-liter."),
+    ("dolci", "Dolci", "Made every morning. Coffee comes from next door.", [
+        ("Tiramisù", "Espresso-soaked savoiardi, mascarpone, cocoa", 13, ""),
+        ("Cannoli Siciliani", "Shells filled to order with sheep's milk ricotta, pistachio, candied orange", 12, ""),
+        ("Babà al Rum", "The Neapolitan yeast cake, soaked in rum syrup, whipped cream", 13, ""),
+        ("Torta Caprese", "Flourless chocolate and almond cake from Capri", 12, ""),
+        ("Affogato", "Fior di latte gelato under a double espresso from Domenico's", 10, ""),
+    ]),
+]
+WINE = [
+    ("vino", "Vino e Bevande", "Glass and bottle. Corkage is $35, two bottles per table.", [
+        ("Lacryma Christi del Vesuvio Rosso", "Campania. Grown on the slopes above Torre del Greco", "15 / 58", ""),
+        ("Taurasi, Aglianico", "Campania. Dark fruit, tar, roses", "19 / 76", ""),
+        ("Chianti Classico", "Tuscany. Cherry and leather", "14 / 54", ""),
+        ("Greco di Tufo", "Campania. Pear, almond, a little salt", "15 / 58", ""),
+        ("Falanghina", "Campania. Lemon and white flowers", "13 / 50", ""),
+        ("Prosecco Superiore", "Valdobbiadene. For the proposal at table six", "14 / 56", ""),
+        ("Limoncello della Casa", "Made in house from Amalfi lemons, served ice cold", "10", ""),
+        ("San Pellegrino, Chinotto, Aranciata", "", "5", ""),
+        ("Diet Coke", "", "4", "Several guests have reported feeling it more than expected. We cannot explain this."),
+    ]),
+]
+D_MENU = [
+    ("caffe", "Caffè", "Pulled on a lever machine Domenico shipped from Naples.", [
+        ("Espresso", "Neapolitan roast, served with a glass of water", "3.50", ""),
+        ("Doppio", "Two shots", "4.50", ""),
+        ("Americano", "Espresso lengthened with hot water", "5", "The house favorite. Domenico knows coffee."),
+        ("Cappuccino", "Morning only, as the rules require", "5.50", ""),
+        ("Marocchino", "Espresso, cocoa, milk foam, in a small glass", "5.50", ""),
+        ("Caffè Shakerato", "Espresso shaken over ice with a little sugar", "6", ""),
+        ("Caffè Sospeso", "Pay for one more, and the next person who asks drinks for free", "3.50", ""),
+    ]),
+    ("pasticceria", "Pasticceria", "From the case by the register.", [
+        ("Biscotti alle Mandorle", "Twice-baked almond biscotti, for dipping", "3", "Firm enough for a karate demonstration. Please dip them instead."),
+        ("Sfogliatella Riccia", "Shell-shaped layers of crisp pastry around semolina and ricotta", "5", ""),
+        ("Cornetto", "Plain, apricot or pistachio cream", "4", ""),
+        ("Babà al Rum", "Small, soaked, very Neapolitan", "6", ""),
+        ("Cannolo", "Filled to order", "5", ""),
     ]),
 ]
 
-# ---------------------------------------------------------------- svg art
-CHECKS_DEF = '''<defs><pattern id="checks" width="50" height="50" patternUnits="userSpaceOnUse">
-<rect width="50" height="50" fill="var(--check-2)"/><rect width="25" height="25" fill="var(--check)" opacity="0.9"/>
-<rect x="25" y="25" width="25" height="25" fill="var(--check)" opacity="0.9"/><rect x="25" width="25" height="25" fill="var(--check)" opacity="0.35"/>
-<rect y="25" width="25" height="25" fill="var(--check)" opacity="0.35"/></pattern></defs>'''
+def item_html(name, en, price, note):
+    en_html = f'<p class="item-en">{esc(en)}</p>' if en else ""
+    note_html = f'<p class="item-note">{esc(note)}</p>' if note else ""
+    return (f'<div class="item"><div class="item-line"><span class="item-name">{esc(name)}</span>'
+            f'<span class="item-price">{esc(str(price))}</span></div>{en_html}{note_html}</div>')
 
-SCENE_PASTA = '''<svg viewBox="0 0 400 500" aria-hidden="true" preserveAspectRatio="xMidYMid slice">''' + CHECKS_DEF + '''
-<rect width="400" height="500" fill="url(#checks)"/>
-<circle cx="200" cy="255" r="150" fill="var(--paper)"/><circle cx="200" cy="255" r="150" fill="none" stroke="var(--rule)" stroke-width="3"/>
-<circle cx="200" cy="255" r="112" fill="none" stroke="var(--rule)" stroke-width="1.5"/>
-<g fill="none" stroke="#e8c27a" stroke-width="5" stroke-linecap="round">
-<path d="M130 255c10-40 60-60 95-40s30 70-10 80-70-20-50-50 70-20 75 10"/><path d="M140 230c30-30 90-30 110 0s0 70-40 75-80-10-70-45"/>
-<path d="M150 285c-10-40 30-80 75-70s55 50 25 75-75 25-80-10"/><path d="M170 210c40-15 90 10 85 50s-50 60-85 40"/>
-<path d="M125 270c5 30 40 55 80 50"/><path d="M260 230c15 25 10 60-20 80"/></g>
-<path d="M160 240c15-25 70-30 85-5s-10 45-40 45-55-15-45-40z" fill="#b5281d"/><circle cx="185" cy="248" r="5" fill="#fbfaf6" opacity="0.35"/>
-<g fill="#3f7a4c"><path d="M205 228c10-14 30-14 34 0-12 8-25 8-34 0z"/><path d="M215 238c4-16 22-24 30-14-6 12-18 18-30 14z"/></g>
-<g fill="#f3ecd8"><circle cx="230" cy="262" r="2.5"/><circle cx="178" cy="270" r="2"/><circle cx="200" cy="232" r="2"/><circle cx="244" cy="246" r="1.8"/></g>
-<rect x="345" y="120" width="8" height="270" fill="#8c8c86"/><rect x="337" y="96" width="24" height="36" fill="#8c8c86"/></svg>'''
+def course_html(cid, title, intro, items):
+    intro_html = f"<p>{esc(intro)}</p>" if intro else ""
+    return (f'<div class="course" id="{cid}"><div class="course-head"><h2>{esc(title)}</h2><hr class="rule">{intro_html}</div>'
+            f'<div class="course-grid">{"".join(item_html(*i) for i in items)}</div></div>')
 
-SCENE_CANDLE = '''<svg viewBox="0 0 400 500" aria-hidden="true" preserveAspectRatio="xMidYMid slice">
-<rect width="400" height="500" fill="#1f2a22"/><rect y="380" width="400" height="120" fill="url(#checks)"/>
-<circle cx="200" cy="120" r="90" fill="#f2c56b" opacity="0.08"/><circle cx="200" cy="120" r="50" fill="#f2c56b" opacity="0.12"/>
-<path d="M200 70c14 18 14 40 0 52-14-12-14-34 0-52z" fill="#f6d27f"/><path d="M200 88c6 9 6 22 0 28-6-6-6-19 0-28z" fill="#fff4d1"/>
-<rect x="186" y="125" width="28" height="60" fill="#f1ead8"/><path d="M186 140c-6 10-4 26 0 30zM214 150c6 12 4 30 0 36z" fill="#f1ead8"/>
-<path d="M180 185h40v40c40 15 70 55 70 105 0 55-40 75-90 75s-90-20-90-75c0-50 30-90 70-105z" fill="#3e5f3a"/>
-<path d="M118 315h164c0 50-30 90-82 90s-82-40-82-90z" fill="#c9a865"/>
-<g stroke="#a88743" stroke-width="2.5"><path d="M128 330h144M124 350h152M128 370h144M140 390h120"/></g>
-<rect x="160" y="262" width="80" height="44" fill="#f1ead8"/>
-<text x="200" y="290" text-anchor="middle" font-family="Bodoni Moda, Georgia, serif" font-style="italic" font-size="17" fill="#b5281d">Terrezano</text></svg>'''
+# ------------------------------------------------------------------ helpers
+def jsonld(o):
+    return '<script type="application/ld+json">' + json.dumps(o, ensure_ascii=False) + "</script>"
 
-SCENE_FRONT = '''<svg viewBox="0 0 400 500" aria-hidden="true" preserveAspectRatio="xMidYMid slice">
-<rect width="400" height="500" fill="#2a3a4a"/><rect x="30" y="60" width="340" height="440" fill="#c9bfae"/>
-<g fill="#a99d89"><rect x="30" y="60" width="340" height="6"/><rect x="30" y="130" width="340" height="3"/></g>
-<rect x="70" y="76" width="70" height="44" fill="#f2c56b" opacity="0.85"/><rect x="260" y="76" width="70" height="44" fill="#f2c56b" opacity="0.6"/>
-<rect x="40" y="170" width="320" height="60" fill="#fbfaf6"/>
-<g fill="#2c4a37"><rect x="40" y="170" width="40" height="60"/><rect x="120" y="170" width="40" height="60"/><rect x="200" y="170" width="40" height="60"/><rect x="280" y="170" width="40" height="60"/></g>
-<path d="M40 230h320l-12 22H52z" fill="#2c4a37"/><rect x="60" y="264" width="280" height="40" fill="#1d231f"/>
-<text x="200" y="292" text-anchor="middle" font-family="Bodoni Moda, Georgia, serif" font-style="italic" font-weight="600" font-size="26" fill="#f2c56b">Terrezano's</text>
-<rect x="60" y="318" width="170" height="182" fill="#f2c56b" opacity="0.9"/>
-<g fill="#b5281d" opacity="0.85"><rect x="72" y="420" width="60" height="10"/><rect x="150" y="420" width="60" height="10"/></g>
-<g fill="#1d231f" opacity="0.55"><circle cx="102" cy="398" r="12"/><circle cx="180" cy="396" r="12"/><rect x="92" y="408" width="20" height="14"/><rect x="170" y="406" width="20" height="16"/></g>
-<g stroke="#a99d89" stroke-width="3"><path d="M145 318v182M60 410h170"/></g>
-<rect x="250" y="318" width="90" height="182" fill="#5a3b2a"/><circle cx="326" cy="410" r="4" fill="#f2c56b"/>
-<rect x="262" y="332" width="66" height="54" fill="#f2c56b" opacity="0.5"/></svg>'''
+def addr(street):
+    return {"@type": "PostalAddress", "streetAddress": street, "addressLocality": CITY, "addressRegion": REGION, "postalCode": ZIP, "addressCountry": "US"}
 
-SCENE_TIRAMISU = '''<svg viewBox="0 0 400 500" aria-hidden="true" preserveAspectRatio="xMidYMid slice">''' + CHECKS_DEF.replace('id="checks"', 'id="checks4"') + '''
-<rect width="400" height="500" fill="var(--paper-2)"/><rect y="330" width="400" height="170" fill="url(#checks4)"/>
-<rect x="70" y="300" width="260" height="20" fill="#d9d6cb"/>
-<path d="M110 300l30-150h150l-30 150z" fill="#f3e6cc"/>
-<path d="M110 300l30-150h150l-30 150z" fill="none" stroke="#d8c7a3" stroke-width="2"/>
-<rect x="128" y="190" width="150" height="14" fill="#7a4b2a" transform="skewX(-11)"/>
-<rect x="122" y="235" width="150" height="14" fill="#7a4b2a" transform="skewX(-11)"/>
-<rect x="138" y="150" width="152" height="10" fill="#5a3520"/>
-<g fill="#5a3520" opacity="0.5"><circle cx="170" cy="155" r="2"/><circle cx="210" cy="153" r="2"/><circle cx="250" cy="156" r="2"/></g>
-<rect x="300" y="240" width="40" height="60" fill="#fbfaf6"/><rect x="300" y="240" width="40" height="10" fill="#3a2418"/>
-<path d="M340 255c16 0 16 26 0 26" fill="none" stroke="#fbfaf6" stroke-width="6"/></svg>'''
+def hours_spec(rows):
+    out = []
+    for day, o, c in rows:
+        if o:
+            c2 = "01:00" if c == "25:00" else c
+            out.append({"@type": "OpeningHoursSpecification", "dayOfWeek": day, "opens": o, "closes": c2})
+    return out
 
-PORTRAIT = '''<svg viewBox="0 0 400 500" aria-hidden="true" preserveAspectRatio="xMidYMid slice">
-<rect width="400" height="500" fill="var(--basil)"/>
-<path d="M70 500c0-110 60-170 130-170s130 60 130 170z" fill="#fbfaf6"/>
-<g fill="#d8d3c4"><circle cx="185" cy="400" r="6"/><circle cx="215" cy="400" r="6"/><circle cx="185" cy="440" r="6"/><circle cx="215" cy="440" r="6"/></g>
-<path d="M165 330h70l-10 40h-50z" fill="#b5281d"/><rect x="178" y="285" width="44" height="50" fill="#e2b48f"/>
-<ellipse cx="200" cy="245" rx="62" ry="72" fill="#e9be99"/>
-<path d="M150 268c18 14 32 10 50 2 18 8 32 12 50-2-6 20-26 30-50 26-24 4-44-6-50-26z" fill="#3a2a22"/>
-<g fill="#2a1f1a"><circle cx="177" cy="236" r="5"/><circle cx="223" cy="236" r="5"/></g>
-<g stroke="#2a1f1a" stroke-width="4"><path d="M165 220h22M213 220h22"/></g>
-<path d="M140 185c0-70 120-70 120 0z" fill="#fbfaf6"/><rect x="128" y="85" width="144" height="110" fill="#fbfaf6"/>
-<circle cx="150" cy="95" r="34" fill="#fbfaf6"/><circle cx="200" cy="80" r="40" fill="#fbfaf6"/><circle cx="250" cy="95" r="34" fill="#fbfaf6"/>
-<rect x="138" y="178" width="124" height="16" fill="#e5e1d4"/></svg>'''
+def fmt(t):
+    h, m = map(int, t.split(":"))
+    h %= 24
+    if h == 0: return "1 am" if m == 0 and False else "midnight"
+    ap = "pm" if h >= 12 else "am"
+    h12 = h - 12 if h > 12 else h
+    return f"{h12}:{m:02d} {ap}".replace(":00", "")
 
-MAP = '''<svg viewBox="0 0 800 450" role="img" aria-label="Map showing Terrezano's on Rockefeller Lane between Fifth and Sixth Avenues, near the 47-50 Sts Rockefeller Center subway station">
-<rect width="800" height="450" fill="var(--paper-2)"/>
-<g fill="var(--paper)"><rect x="40" y="40" width="180" height="110"/><rect x="250" y="40" width="300" height="110"/><rect x="580" y="40" width="180" height="110"/>
-<rect x="40" y="190" width="180" height="90"/><rect x="250" y="190" width="300" height="90"/><rect x="580" y="190" width="180" height="90"/>
-<rect x="40" y="320" width="180" height="90"/><rect x="250" y="320" width="300" height="90"/><rect x="580" y="320" width="180" height="90"/></g>
-<g fill="var(--ink-soft)" font-family="Instrument Sans, Arial, sans-serif" font-size="13" letter-spacing="1">
-<text x="228" y="30" transform="rotate(90 228 30)">SIXTH AVE</text><text x="558" y="30" transform="rotate(90 558 30)">FIFTH AVE</text>
-<text x="60" y="176">W 50TH ST</text><text x="60" y="306">W 49TH ST</text><text x="610" y="176">W 50TH ST</text></g>
-<rect x="250" y="160" width="300" height="22" fill="var(--rule)"/>
-<text x="400" y="176" text-anchor="middle" font-family="Instrument Sans, Arial, sans-serif" font-size="13" font-weight="600" fill="var(--ink)" letter-spacing="1">ROCKEFELLER LANE</text>
-<rect x="372" y="200" width="56" height="56" fill="var(--sauce)"/>
-<text x="400" y="236" text-anchor="middle" font-family="Bodoni Moda, Georgia, serif" font-style="italic" font-size="26" fill="var(--on-accent)">T</text>
-<text x="400" y="274" text-anchor="middle" font-family="Instrument Sans, Arial, sans-serif" font-size="13" font-weight="600" fill="var(--ink)">Terrezano's, no. 43</text>
-<circle cx="236" cy="300" r="14" fill="var(--basil)"/><text x="236" y="305" text-anchor="middle" font-family="Instrument Sans, Arial, sans-serif" font-size="13" font-weight="700" fill="var(--on-accent)">M</text>
-<text x="60" y="350" font-family="Instrument Sans, Arial, sans-serif" font-size="13" fill="var(--ink-soft)">B D F M to 47-50 Sts</text></svg>'''
+def hours_dl(rows):
+    out = []
+    for day, o, c in rows:
+        val = "Closed" if not o else (fmt(o) + " to " + ("1 am" if c == "25:00" else fmt(c)))
+        out.append(f"<dt>{day}</dt><dd>{val}</dd>")
+    return '<dl class="hours">' + "".join(out) + "</dl>"
 
-# ---------------------------------------------------------------- helpers
-def jsonld(obj):
-    return '<script type="application/ld+json">' + json.dumps(obj, ensure_ascii=False) + "</script>"
-
-def address():
-    return {"@type": "PostalAddress", "streetAddress": STREET, "addressLocality": CITY,
-            "addressRegion": REGION, "postalCode": ZIP, "addressCountry": "US"}
+RESTAURANT_ID = SITE + "/#restaurant"
+CAFE_ID = SITE + "/domenicos/#cafe"
+LUIGI_ID = SITE + "/chef-luigi/#luigi"
 
 def restaurant_ld():
-    spec = []
-    for day, o, c in HOURS:
-        if o:
-            spec.append({"@type": "OpeningHoursSpecification", "dayOfWeek": day, "opens": o, "closes": c})
-    return {
-        "@context": "https://schema.org", "@type": "Restaurant", "@id": SITE + "/#restaurant",
-        "name": "Terrezano's Ristorante", "alternateName": ["Terrezano's", "Terrezanos"],
-        "url": SITE + "/", "image": SITE + "/og.png", "logo": SITE + "/favicon.svg",
-        "description": "Family Italian restaurant in Midtown Manhattan serving handmade pasta, secondi and dolci, every plate cooked by Chef Luigi Marinara.",
-        "servesCuisine": ["Italian", "Southern Italian", "Pasta"], "priceRange": "$$",
-        "telephone": PHONE_INTL, "acceptsReservations": "True", "address": address(),
-        "geo": {"@type": "GeoCoordinates", "latitude": 40.7590, "longitude": -73.9787},
-        "openingHoursSpecification": spec, "hasMenu": SITE + "/menu/",
-        "founder": {"@type": "Person", "name": "Luigi Marinara", "jobTitle": "Executive Chef"},
-        "aggregateRating": {"@type": "AggregateRating", "ratingValue": "4.9", "reviewCount": "43", "bestRating": "5"},
-    }
+    return {"@context": "https://schema.org", "@type": "Restaurant", "@id": RESTAURANT_ID,
+            "name": "Terrezano's Ristorante", "alternateName": ["Terrezano's", "Terrezanos"], "url": SITE + "/",
+            "image": [SITE + "/img/hero-spaghetti-2000.jpg", SITE + "/img/hero-dining-room-2000.jpg"], "logo": SITE + "/favicon.svg",
+            "description": "Neapolitan Italian restaurant in Midtown Manhattan near Rockefeller Center, serving handmade pasta, Sunday ragù and family recipes from Torre del Greco, cooked by Chef Luigi Marinara.",
+            "servesCuisine": ["Italian", "Neapolitan", "Southern Italian"], "priceRange": "$$$", "telephone": PHONE_INTL,
+            "acceptsReservations": "True", "address": addr(STREET), "geo": {"@type": "GeoCoordinates", "latitude": 40.7590, "longitude": -73.9787},
+            "openingHoursSpecification": hours_spec(HOURS), "hasMenu": SITE + "/menu/", "founder": {"@id": LUIGI_ID},
+            "foundingDate": "2017-09-30", "department": {"@id": CAFE_ID}}
+
+def cafe_ld():
+    return {"@context": "https://schema.org", "@type": "CafeOrCoffeeShop", "@id": CAFE_ID, "name": "Domenico's Caffè",
+            "alternateName": "Domenico's", "url": SITE + "/domenicos/", "image": SITE + "/img/caffe-sign-1400.jpg",
+            "description": "Neapolitan espresso bar next door to Terrezano's, run by Domenico Marinara. Espresso, Americano, sfogliatelle and biscotti.",
+            "servesCuisine": ["Coffee", "Italian pastry"], "priceRange": "$", "telephone": D_PHONE_INTL, "address": addr(D_STREET),
+            "openingHoursSpecification": hours_spec(D_HOURS), "foundingDate": "2018-09-29", "parentOrganization": {"@id": RESTAURANT_ID}}
 
 def crumbs_ld(trail):
     items = [{"@type": "ListItem", "position": 1, "name": "Home", "item": SITE + "/"}]
-    for i, (name, path) in enumerate(trail, start=2):
-        items.append({"@type": "ListItem", "position": i, "name": name, "item": SITE + path})
+    for i, (n, p) in enumerate(trail, 2):
+        items.append({"@type": "ListItem", "position": i, "name": n, "item": SITE + p})
     return {"@context": "https://schema.org", "@type": "BreadcrumbList", "itemListElement": items}
 
-def nav_html(current):
-    links = []
-    for href, label in NAV:
-        cur = ' aria-current="page"' if href == current else ""
-        links.append(f'<a href="{href}"{cur}>{esc(label)}</a>')
-    links.append('<a class="btn primary" href="/reservations/">Reserve</a>')
-    return "\n      ".join(links)
+def opener(title, text, crumbs):
+    parts = ['<a href="/">Home</a>'] + [f'<span aria-hidden="true">/</span><span aria-current="page">{esc(crumbs[-1][0])}</span>']
+    return f'''<header class="opener"><div class="wrap">
+  <nav class="crumbs" aria-label="Breadcrumb">{"".join(parts)}</nav>
+  <h1>{title}</h1>
+  <hr class="rule">
+  <p>{text}</p>
+</div></header>'''
 
-def hours_rows():
-    def fmt(t):
-        h, m = map(int, t.split(":"))
-        ap = "pm" if h >= 12 else "am"
-        h = h - 12 if h > 12 else h
-        return f"{h}:{m:02d} {ap}"
-    rows = []
-    for day, o, c in HOURS:
-        rows.append(f"<dt>{day}</dt><dd>{'Closed' if not o else fmt(o) + ' to ' + fmt(c)}</dd>")
-    return "".join(rows)
-
-def page(path, title, desc, body, current=None, ld=None, crumbs=None, robots="index, follow"):
+def page(path, title, desc, body, current=None, ld=None, crumbs=None, robots="index, follow", og_image="/og.jpg"):
     url = SITE + path
     blocks = [jsonld(x) for x in (ld or [])]
     if crumbs:
         blocks.append(jsonld(crumbs_ld(crumbs)))
-    crumb_html = ""
-    if crumbs:
-        parts = ['<a href="/">Home</a>']
-        for name, p in crumbs[:-1]:
-            parts.append(f'<a href="{p}">{esc(name)}</a>')
-        parts.append(f'<span aria-current="page">{esc(crumbs[-1][0])}</span>')
-        crumb_html = '<nav class="crumbs" aria-label="Breadcrumb">' + '<span aria-hidden="true">/</span>'.join(parts) + "</nav>"
-    body = body.replace("{{CRUMBS}}", crumb_html)
+    nav = "".join(f'<a href="{h}"{" aria-current=\"page\"" if h == current else ""}>{esc(l)}</a>' for h, l in NAV)
+    nav += f'<a class="reserve" href="/reservations/"{" aria-current=\"page\"" if current == "/reservations/" else ""}>Reservations</a>'
     foot_nav = "".join(f'<li><a href="{h}">{esc(l)}</a></li>' for h, l in NAV)
     return f'''<!doctype html>
 <html lang="en">
@@ -243,59 +222,57 @@ def page(path, title, desc, body, current=None, ld=None, crumbs=None, robots="in
 <meta name="description" content="{esc(desc)}">
 <meta name="robots" content="{robots}">
 <link rel="canonical" href="{url}">
-<meta name="theme-color" content="#2c4a37">
+<meta name="theme-color" content="#6c1b1b">
 <meta property="og:site_name" content="Terrezano's Ristorante">
 <meta property="og:type" content="website">
+<meta property="og:locale" content="en_US">
 <meta property="og:title" content="{esc(title)}">
 <meta property="og:description" content="{esc(desc)}">
 <meta property="og:url" content="{url}">
-<meta property="og:image" content="{SITE}/og.png">
+<meta property="og:image" content="{SITE}{og_image}">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:image:alt" content="Terrezano's Ristorante, handmade Italian in New York">
-<meta property="og:locale" content="en_US">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="{esc(title)}">
 <meta name="twitter:description" content="{esc(desc)}">
-<meta name="twitter:image" content="{SITE}/og.png">
+<meta name="twitter:image" content="{SITE}{og_image}">
 <meta name="geo.region" content="US-NY">
 <meta name="geo.placename" content="New York">
+<meta name="geo.position" content="40.7590;-73.9787">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<link rel="sitemap" type="application/xml" href="/sitemap.xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@0,6..96,400..800;1,6..96,400..700&family=Instrument+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jost:wght@400;500&family=Libre+Caslon+Display&family=Libre+Caslon+Text:ital,wght@0,400;0,700;1,400&display=swap">
 <link rel="stylesheet" href="/styles.css">
 {chr(10).join(blocks)}
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
-<header class="site-head">
-  <div class="wrap">
-    <a class="logo" href="/" aria-label="Terrezano's home">Terrezano<span>'</span>s</a>
-    <nav class="nav" aria-label="Main">
-      {nav_html(current)}
-    </nav>
-  </div>
-</header>
+<div class="topbar"><div class="wrap">
+  <span>{STREET}, New York<span class="sep hide-sm">|</span><span class="hide-sm">{PHONE}</span></span>
+  <a href="/domenicos/">Espresso next door at Domenico's</a>
+</div></div>
+<header class="masthead"><div class="wrap">
+  <a class="wordmark" href="/" aria-label="Terrezano's, home"><b>TERREZANO'S</b><small>Ristorante &middot; New York</small></a>
+</div></header>
+<nav class="nav" aria-label="Main"><div class="wrap">{nav}</div></nav>
 <main id="main">
 {body}
 </main>
 <footer>
   <div class="wrap">
-    <div class="foot-grid">
+    <div class="foot">
       <div>
-        <a class="logo" href="/">Terrezano<span>'</span>s</a>
-        <p class="muted measure">Handmade Italian food, fresh pasta and family recipes in Midtown Manhattan, cooked by Chef Luigi Marinara.</p>
+        <a class="wordmark" href="/"><b>TERREZANO'S</b><small>Ristorante &middot; New York</small></a>
+        <p>Neapolitan cooking from Torre del Greco, served on Rockefeller Lane since 2017.</p>
       </div>
-      <div><h2>Visit</h2><ul><li>{STREET}</li><li>{CITY}, {REGION} {ZIP}</li><li>{PHONE}</li><li><a href="/visit/">Directions</a></li></ul></div>
-      <div><h2>Explore</h2><ul>{foot_nav}</ul></div>
-      <div><h2>More</h2><ul><li><a href="/reservations/">Reservations</a></li><li><a href="/as-seen-on-snl/">As Seen on SNL</a></li><li><a href="/sitemap.xml">Sitemap</a></li></ul></div>
+      <div><h2>Terrezano's</h2><ul><li>{STREET}</li><li>{CITY}, {REGION} {ZIP}</li><li>{PHONE}</li><li><a href="/visit/">Hours and directions</a></li></ul></div>
+      <div><h2>Domenico's Caffè</h2><ul><li>{D_STREET}</li><li>{CITY}, {REGION} {ZIP}</li><li>{D_PHONE}</li><li><a href="/domenicos/">Menu and hours</a></li></ul></div>
+      <div><h2>More</h2><ul>{foot_nav}<li><a href="/reservations/">Reservations</a></li><li><a href="/press/">Press</a></li><li><a href="/faq/">FAQ</a></li><li><a href="/credits/">Photo credits</a></li></ul></div>
     </div>
     <div class="fine">
-      <p>Est. 2017, in a manner of speaking.</p>
-      <p>This is a fan tribute to the fictional restaurant from the Saturday Night Live sketch "Italian Restaurant" (September 30, 2017). Terrezano's is not a real business. The address, phone number, chef and reviews are fictional, and no reservation is ever actually booked. Not affiliated with NBC, Saturday Night Live or Pizza Hut.</p>
+      <p>Terrezano's and Domenico's are fictional restaurants from two Saturday Night Live sketches, "Italian Restaurant" (September 30, 2017) and "Coffee Shop" (September 29, 2018). This is a fan tribute. The chef, the family, the addresses, the phone numbers and the guests quoted here are invented, and no reservation is ever booked. Not affiliated with NBC, Saturday Night Live, Pizza Hut or Burger King. Photography from Unsplash contributors.</p>
     </div>
   </div>
 </footer>
@@ -304,427 +281,519 @@ def page(path, title, desc, body, current=None, ld=None, crumbs=None, robots="in
 </html>
 '''
 
-def dish_html(name, price, tag, desc, joke):
-    tag_html = f' <span class="tag">{esc(tag)}</span>' if tag else ""
-    joke_html = f'<span class="it">{esc(joke)}</span>' if joke else ""
-    return (f'<div class="dish"><div class="dish-line"><span class="dish-name">{esc(name)}{tag_html}</span>'
-            f'<span class="dish-dots"></span><span class="dish-price">{esc(str(price))}</span></div>'
-            f'<p>{esc(desc)}</p>{joke_html}</div>')
-
-def band(title, text, cta_href="/reservations/", cta="Reserve a table"):
-    return f'''<section class="band tight"><div class="wrap">
-  <div><h2>{title}</h2><p>{text}</p></div>
-  <a class="btn" href="{cta_href}">{cta}</a>
-</div></section>'''
-
 def res_form(kind="table"):
     if kind == "event":
-        return '''<div class="form-panel"><form class="res" data-kind="event" novalidate>
-  <div class="field"><label for="e-name">Name</label><input id="e-name" name="name" autocomplete="name" placeholder="Your name"></div>
-  <div class="field"><label for="e-email">Email</label><input id="e-email" name="email" type="email" autocomplete="email" placeholder="you@example.com"></div>
+        return '''<div class="form-card"><form class="res" data-kind="event" novalidate>
+  <div class="field"><label for="e-name">Name</label><input id="e-name" name="name" autocomplete="name"></div>
+  <div class="field"><label for="e-email">Email</label><input id="e-email" name="email" type="email" autocomplete="email"></div>
   <div class="field"><label for="e-date">Date</label><input id="e-date" name="date" type="date"></div>
-  <div class="field"><label for="e-size">Group size</label><select id="e-size" name="size"><option>10 to 20 guests</option><option selected>20 to 40 guests</option><option>40 to 60 guests</option><option>Full buyout, 90 guests</option></select></div>
-  <div class="field full"><label for="e-notes">Tell us about the event</label><textarea id="e-notes" name="notes" placeholder="Rehearsal dinner, birthday, a wrap party for a very long-running TV show"></textarea></div>
-  <div class="field full"><button class="btn" type="submit">Send inquiry</button></div>
+  <div class="field"><label for="e-size">Guests</label><select id="e-size" name="size"><option>Up to 12 guests</option><option selected>12 to 40 guests</option><option>Full restaurant, up to 90</option><option>Domenico's, morning event</option></select></div>
+  <div class="field full"><label for="e-notes">Tell us about it</label><textarea id="e-notes" name="notes"></textarea></div>
+  <div class="field full"><button class="btn solid" type="submit">Send inquiry</button></div>
   <div class="confirm" role="status" tabindex="-1" hidden></div>
 </form></div>'''
-    times = "".join(f"<option{' selected' if t == '7:00 pm' else ''}>{t}</option>" for t in
-                    ["5:30 pm", "6:00 pm", "6:30 pm", "7:00 pm", "7:30 pm", "8:00 pm", "8:30 pm", "9:00 pm", "9:30 pm", "10:00 pm", "10:30 pm"])
+    times = "".join(f"<option{' selected' if t == '7:30 pm' else ''}>{t}</option>" for t in
+                    ["5:00 pm", "5:30 pm", "6:00 pm", "6:30 pm", "7:00 pm", "7:30 pm", "8:00 pm", "8:30 pm", "9:00 pm", "9:30 pm", "10:00 pm"])
     party = "".join(f"<option{' selected' if n == 2 else ''}>{n}</option>" for n in range(1, 9))
-    return f'''<div class="form-panel"><form class="res" data-kind="table" novalidate>
-  <div class="field"><label for="r-name">Name</label><input id="r-name" name="name" autocomplete="name" placeholder="Your name"></div>
-  <div class="field"><label for="r-party">Guests</label><select id="r-party" name="party">{party}</select></div>
+    return f'''<div class="form-card"><form class="res" data-kind="table" novalidate>
   <div class="field"><label for="r-date">Date</label><input id="r-date" name="date" type="date"></div>
   <div class="field"><label for="r-time">Time</label><select id="r-time" name="time">{times}</select></div>
-  <div class="field full"><label for="r-notes">Occasion or notes</label><textarea id="r-notes" name="notes" placeholder="Anniversary, allergies, a proposal at table six"></textarea></div>
-  <div class="field full"><button class="btn" type="submit">Request this table</button></div>
+  <div class="field"><label for="r-party">Guests</label><select id="r-party" name="party">{party}</select></div>
+  <div class="field"><label for="r-name">Name</label><input id="r-name" name="name" autocomplete="name"></div>
+  <div class="field full"><label for="r-notes">Occasion, allergies, requests</label><textarea id="r-notes" name="notes"></textarea></div>
+  <div class="field full"><button class="btn solid" type="submit">Request a table</button></div>
   <div class="confirm" role="status" tabindex="-1" hidden></div>
 </form></div>'''
 
-# ---------------------------------------------------------------- FAQ data
+def info_strip(dark=True):
+    return f'''<div class="info">
+  <div><h3>Dinner</h3><p>Tuesday to Sunday from 5 pm. Saturdays until 1 am.</p></div>
+  <div><h3>Address</h3><p>{STREET}<br>{CITY}, {REGION} {ZIP}</p></div>
+  <div><h3>Telephone</h3><p>{PHONE}</p></div>
+  <div><h3>Next door</h3><p><a href="/domenicos/">Domenico's Caffè</a>, espresso from 7 am</p></div>
+</div>'''
+
+# ------------------------------------------------------------------ FAQ
 FAQ = [
-    ("The food", [
-        ("Is the pasta at Terrezano's made in house?", "Yes. Every pasta is rolled, cut and cooked in our kitchen every afternoon by Chef Luigi Marinara and his team. You can watch through the kitchen door."),
-        ("Is Chef Luigi a real person?", "Yes. He is in the kitchen right now. He is wearing the hat. Please stop asking the servers whether he is an actor."),
-        ("Do you have gluten-free and vegetarian options?", "Yes. Any pasta can be made with gluten-free rigatoni for $3, and the melanzane, caprese, burrata, cacio e pepe and pomodoro are all vegetarian. Tell your server about allergies before you order."),
-        ("Do you serve pizza?", "We serve one pizza, a Margherita from our oven. We are a pasta restaurant. Our pizza has nothing to do with anybody else's pizza."),
+    ("Dining with us", [
+        ("Is everything made in house?", "Yes. Pasta is rolled every afternoon, the ragù goes on at noon, and the breadsticks, desserts and limoncello are made here. Coffee and espresso come from Domenico's next door."),
+        ("Do you take reservations?", "Yes, up to 30 days ahead, online or at (212) 555-0930. We hold tables for 15 minutes. The bar is first come, first served, with the full menu."),
+        ("What should I order on a first visit?", "The spaghetti al pomodoro, the ziti alla Genovese and the tiramisù. Chef Luigi gives the same answer on the tenth visit."),
+        ("Do you have vegetarian and gluten-free options?", "Yes. The pomodoro, primavera, burrata, melanzane and most contorni are vegetarian, and any pasta can be made with gluten-free rigatoni."),
+        ("Is there a dress code?", "No. Most guests dress the way you would for a nice dinner in Midtown. Proposals are welcome in any outfit."),
+        ("Can I propose at Terrezano's?", "Many guests have. Ask for table six when you book. We will light the candles, chill the Prosecco and make sure nobody interrupts."),
     ]),
-    ("Reservations and visiting", [
-        ("Does Terrezano's take reservations?", "Yes. Book online on our reservations page or call (212) 555-0930. We hold tables for 15 minutes. The bar is first come, first served."),
-        ("What are your hours?", "Tuesday through Thursday 5 to 10 pm, Friday and Saturday 5 to 11:30 pm, Sunday 4 to 9 pm. We are closed Mondays."),
-        ("Is there a dress code?", "Smart casual. Leave the tuxedo at home unless you are proposing, in which case we fully support the tuxedo."),
-        ("Can I propose at Terrezano's?", "Many people have. Call ahead and we will set table six with candles and have the Prosecco ready. Nobody will interrupt the moment with a marketing announcement."),
-    ]),
-    ("The rumors", [
-        ("Does Terrezano's deliver?", "No. Terrezano's does not deliver and has never delivered. If you have seen our pasta arrive in a box with a red roof on it, you have us confused with someone else."),
-        ("Are there hidden cameras in the dining room?", "No. There are no cameras, no film crews and no men in suits waiting to reveal anything. The only surprise at Terrezano's is how good the tiramisù is."),
-        ("Is Terrezano's a real restaurant?", "Inside the world of this website, absolutely. Outside of it, Terrezano's is the fictional restaurant from a 2017 Saturday Night Live sketch, and this site is a tribute. See our As Seen on SNL page for the details."),
+    ("A few things people ask", [
+        ("Do you deliver?", "No. We never have. Our food is served in our dining room, on our plates."),
+        ("Is Chef Luigi really in the kitchen?", "Every night we are open. In the kitchen they call him Claudio, which is also his name. You can read the whole story on the Chef Luigi page."),
+        ("Do you allow filming or photography?", "Phones, of course. Professional crews need permission in advance, and guests who end up in a shot are always asked first."),
+        ("Is Terrezano's a real restaurant?", "On this website, completely. Off it, Terrezano's began as a fictional restaurant in a 2017 Saturday Night Live sketch, and this site is a tribute. Our press page has the details."),
     ]),
 ]
 
-# ---------------------------------------------------------------- pages
+# ------------------------------------------------------------------ build
 def build():
     if os.path.isdir(OUT):
         shutil.rmtree(OUT)
     os.makedirs(OUT)
     pages = {}
 
-    # HOME
-    trio = [d for c in MENU for d in c[3] if d[0] in ("Spaghetti al Pomodoro di Luigi", "Rigatoni alla Vodka", "Tiramisù")]
-    trio_html = "".join(f'<article><h3>{esc(n)}</h3><p class="muted">{esc(d)}</p><span class="price">${p}</span></article>' for n, p, t, d, j in trio)
-    figs = [(SCENE_PASTA, "Spaghetti al pomodoro"), (SCENE_CANDLE, "Tavola for two, every night"),
-            (SCENE_FRONT, "43 Rockefeller Lane"), (SCENE_TIRAMISU, "Tiramisù, made every morning")]
-    fig_html = "".join(f'<figure class="{"on" if i == 0 else ""}">{svg}<figcaption>{cap}</figcaption></figure>' for i, (svg, cap) in enumerate(figs))
-    dot_html = "".join(f'<button type="button" aria-label="Show picture {i+1}"></button>' for i in range(len(figs)))
+    # HOME --------------------------------------------------------------
+    heroes = [("hero-spaghetti", "Spaghetti al pomodoro in a white bowl", "Spaghetti al pomodoro"),
+              ("hero-dining-room", "A corner table by the window, red walls and brass sconces", "The front room"),
+              ("hero-candlelight", "Two glasses and a bottle of red wine by candlelight", "Table six, after nine"),
+              ("hero-mulberry-night", "Diners outside a restaurant on a lit-up New York street at night", "Saturday night, out front")]
+    figs = "".join(f'<figure class="{"on" if i == 0 else ""}">{img(n, a, "100vw", eager=(i == 0))}<figcaption>{c}</figcaption></figure>' for i, (n, a, c) in enumerate(heroes))
+    dots = "".join(f'<button type="button" aria-label="Show photo {i+1}"></button>' for i in range(len(heroes)))
     home = f'''
-<section class="hero" aria-labelledby="hero-title">
-  <div class="wrap">
-    <div class="hero-copy">
-      <h1 id="hero-title">Handmade Italian. Made <em>right here.</em></h1>
-      <p>Terrezano's is a family trattoria in Midtown Manhattan serving fresh pasta, slow sauces and the kind of tiramisù people propose over. Every plate is cooked by Chef Luigi Marinara, in our kitchen, tonight.</p>
-      <div class="btn-row"><a class="btn primary" href="/reservations/">Reserve a table</a><a class="btn" href="/menu/">See the menu</a></div>
-      <div class="hero-meta"><span><strong>Open tonight</strong> from 5 pm</span><span>{STREET}, NYC</span><span>{PHONE}</span></div>
-    </div>
-    <div class="stage" id="stage" role="region" aria-roledescription="carousel" aria-label="Pictures from Terrezano's">
-      {fig_html}
-      <div class="dots">{dot_html}</div>
-    </div>
-  </div>
-</section>
-<div class="promise"><div class="wrap">
-  <span>Pasta rolled fresh every afternoon</span><span>San Marzano tomatoes only</span>
-  <span>One chef. One kitchen. This one.</span><span>No cameras in the dining room</span>
-</div></div>
-<section aria-labelledby="intro-title"><div class="wrap split">
-  <div class="stack">
-    <h2 id="intro-title">The best Italian restaurant you will ever find out about</h2>
-    <a class="textlink" href="/our-story/">Read our story</a>
-  </div>
-  <div class="prose dropcap">
-    <p>Since the night we opened, Terrezano's has been the place Midtown goes for a real plate of pasta. Our sauces simmer for hours. Our fettuccine is cut by hand. Our breadsticks come out of our own oven, and our Chianti bottles hold their candles the way they should.</p>
-    <p>Regulars tell us it is the best pasta they have ever had. Couples come back every anniversary. One very proud, half-Italian guest has told us she would know if anything about this place were fake, and we take that seriously.</p>
+<div class="hero" role="region" aria-roledescription="carousel" aria-label="Photos from Terrezano's">{figs}<div class="dots">{dots}</div></div>
+
+<section><div class="wrap statement">
+  <h1 style="font-size:clamp(2.4rem,5vw,4.2rem)">Neapolitan cooking, a Midtown dining room, and a chef who makes every plate himself.</h1>
+  <div class="flow">
+    <p class="lede">Terrezano's is named for Rosa Terrezano, who fed her neighbors in Torre del Greco from a three-table trattoria on the Bay of Naples. Her grandson, Chef Luigi Marinara, still cooks from her notebook.</p>
+    <p class="muted">Pasta is rolled every afternoon, the Sunday ragù simmers for six hours every day of the week, and the wine list leans hard toward Campania. Reservations are recommended, the bar is for walk-ins, and Saturday nights go late.</p>
+    <p><a class="more" href="/our-story/">Our story</a></p>
   </div>
 </div></section>
-<section class="alt" aria-labelledby="sig-title"><div class="wrap">
-  <div class="sec-head"><h2 id="sig-title">Three plates to start with</h2><p class="muted measure">If it is your first visit, Chef Luigi suggests these. If it is your tenth, he suggests these again.</p></div>
-  <div class="trio">{trio_html}</div>
-  <p style="margin-top:48px"><a class="btn" href="/menu/">Full dinner menu</a></p>
+
+<section class="alt"><div class="wrap">
+  <div class="center" style="display:grid;gap:18px;justify-items:center;margin-bottom:clamp(40px,5vw,64px)"><h2>From the kitchen</h2><hr class="rule"></div>
+  <div class="dishes">
+    <article>{img("pomodoro", "Spaghetti with tomato sauce and basil in a white bowl", "(max-width: 880px) 100vw, 33vw")}<h3>Spaghetti al Pomodoro</h3><p class="muted">San Marzano tomato, garlic, basil, Parmigiano-Reggiano.</p><p class="it">The first thing Nonna Rosa taught him to cook.</p></article>
+    <article>{img("lasagna", "A slice of lasagna with basil on a white plate", "(max-width: 880px) 100vw, 33vw")}<h3>Lasagna della Nonna</h3><p class="muted">Twelve layers of ragù, béchamel and fresh pasta, baked to order.</p><p class="it">Allow twenty minutes. It is worth it.</p></article>
+    <article>{img("tiramisu", "A square of tiramisu dusted with cocoa", "(max-width: 880px) 100vw, 33vw")}<h3>Tiramisù</h3><p class="muted">Savoiardi soaked in espresso from next door, mascarpone, cocoa.</p><p class="it">More proposals have happened over this than anything else we serve.</p></article>
+  </div>
+  <p class="center" style="margin-top:clamp(40px,5vw,64px)"><a class="btn" href="/menu/">See the full menu</a></p>
 </div></section>
-<section aria-labelledby="chef-title"><div class="wrap split center">
-  <div class="portrait">{PORTRAIT}</div>
-  <div class="stack">
-    <h2 id="chef-title">Meet Chef Luigi Marinara</h2>
-    <p class="measure">Luigi learned to cook at his grandmother's stove in a village just outside Naples. He runs our kitchen every night we are open, and he cooks your food himself. He would like that on the record.</p>
-    <a class="textlink" href="/chef-luigi/">About Chef Luigi</a>
+
+<section><div class="wrap split wide-right">
+  {photo("dining-arch", "A long dining room under brick arches, lit low in the evening", "r-tall")}
+  <div class="copy">
+    <h2>Three tables from Torre del Greco</h2>
+    <p>When we opened, the room on Rockefeller Lane was an empty warehouse with exactly three tables in it, the ones Luigi shipped from his grandmother's trattoria. A guest said it looked like a warehouse with three tables. He was right. We have added a few more since.</p>
+    <p class="muted">Rosa's tables are by the front window. The one in the corner is table six, and it has hosted more engagements than we can count.</p>
+    <a class="more" href="/private-dining/">Private dining</a>
   </div>
 </div></section>
-<section class="alt" aria-labelledby="said-title"><div class="wrap">
-  <div class="sec-head"><h2 id="said-title">Overheard at table six</h2></div>
+
+<section class="oxblood"><div class="wrap split">
+  <div class="copy">
+    <h2>Chef Luigi Marinara</h2>
+    <hr class="rule">
+    <p>Born Claudio Luigi Marinara in Torre del Greco, raised in his grandmother's kitchen, trained on the Capri ferries and in Sorrento, and seasoned by thirty years of New York kitchens. He greets every table himself. Where he comes from, looking a guest in the eye means something.</p>
+    <a class="more" href="/chef-luigi/">Read his story</a>
+  </div>
+  {photo("chef-luigi", "Chef Luigi Marinara in his toque, holding a ladle up to the light in the kitchen", "r-portrait")}
+</div></section>
+
+<section><div class="wrap">
   <div class="quotes">
-    <blockquote><q>I'm half Italian. I know pasta. This is real pasta, from a real kitchen, and nobody is going to tell me different.</q><cite>A regular, very sure of herself</cite></blockquote>
-    <blockquote><q>We come here every anniversary. If I ever found out this wasn't Luigi's food, I don't know what I'd do. Mark, back me up here.</q><cite>Her fiancé, who asked us to stop filming</cite></blockquote>
-    <blockquote><q>Honestly? I'd still eat it.</q><cite>Mark</cite></blockquote>
+    <blockquote><q>I'm fifty percent Italian, so I know what pasta should taste like. Terrezano's does it right.</q><cite>A regular at table six</cite></blockquote>
+    <blockquote><q>I'll say it until the day I die. Domenico's knows coffee.</q><cite>A newlywed, next door</cite></blockquote>
+    <blockquote><q>Honestly, I wish I'd never told anybody my name.</q><cite>Mark, behind the bar</cite></blockquote>
   </div>
 </div></section>
-{band("Your table is waiting", "Reservations open 30 days out. Walk-ins welcome at the bar, and on Saturday nights we stay open late.")}
+
+<section class="green"><div class="wrap split wide-left">
+  {photo("espresso-biscotti", "An espresso in a blue cup with almond biscotti on the saucer", "r-land")}
+  <div class="copy">
+    <h2>Next door, Domenico's</h2>
+    <hr class="rule">
+    <p>Luigi's younger brother Domenico runs the espresso bar at 44 Rockefeller Lane, with a lever machine from Naples, sfogliatelle in the case and a standing offer for newlyweds: your first coffee as a married couple is on the house.</p>
+    <a class="more" href="/domenicos/">Visit Domenico's</a>
+  </div>
+</div></section>
+
+<section class="tight alt"><div class="wrap">{info_strip()}
+  <div class="btn-row" style="margin-top:44px"><a class="btn solid" href="/reservations/">Reserve a table</a><a class="btn" href="/visit/">Directions</a></div>
+</div></section>
 '''
-    pages["/"] = page("/", "Terrezano's | Handmade Italian Restaurant in Midtown NYC",
-        "Terrezano's is a family Italian restaurant in Midtown Manhattan serving handmade pasta, slow-simmered sauces and house tiramisù, every plate cooked by Chef Luigi Marinara. Reserve a table tonight.",
+    pages["/"] = page("/", "Terrezano's | Neapolitan Italian Restaurant near Rockefeller Center, NYC",
+        "Terrezano's is a Neapolitan Italian restaurant in Midtown Manhattan near Rockefeller Center. Handmade pasta, six-hour Sunday ragù and family recipes from Torre del Greco, cooked by Chef Luigi Marinara.",
         home, None, [restaurant_ld(), {"@context": "https://schema.org", "@type": "WebSite", "name": "Terrezano's Ristorante", "url": SITE + "/"}])
 
-    # MENU
-    idx = "".join(f'<a href="#{cid}">{esc(cn)}</a>' for cid, cn, _, _ in MENU)
-    courses = ""
-    for cid, cn, intro, items in MENU:
-        courses += f'''<div class="course" id="{cid}"><div class="course-head"><h2>{esc(cn)}</h2><p>{esc(intro)}</p></div>
-<div class="menu-grid">{"".join(dish_html(*d) for d in items)}</div></div>'''
-    menu_ld = {"@context": "https://schema.org", "@type": "Menu", "name": "Terrezano's Dinner Menu", "url": SITE + "/menu/",
-               "inLanguage": "en", "hasMenuSection": []}
-    for cid, cn, intro, items in MENU:
-        sec = {"@type": "MenuSection", "name": cn, "description": intro, "hasMenuItem": []}
-        for n, p, t, d, j in items:
-            item = {"@type": "MenuItem", "name": n, "description": d}
-            if isinstance(p, int):
-                item["offers"] = {"@type": "Offer", "price": str(p), "priceCurrency": "USD"}
-            if t == "Vegetarian" or n in ("Spaghetti al Pomodoro di Luigi", "Cacio e Pepe", "Burrata Pugliese", "Insalata Caprese"):
-                item["suitableForDiet"] = "https://schema.org/VegetarianDiet"
-            sec["hasMenuItem"].append(item)
+    # MENU ----------------------------------------------------------------
+    jump = "".join(f'<a href="#{c[0]}">{esc(c[1])}</a>' for c in MENU + WINE)
+    courses = "".join(course_html(*c) for c in MENU[:2])
+    courses2 = "".join(course_html(*c) for c in MENU[2:])
+    menu_ld = {"@context": "https://schema.org", "@type": "Menu", "name": "Terrezano's Dinner Menu", "url": SITE + "/menu/", "inLanguage": "en", "hasMenuSection": []}
+    veg = {"Burrata con Pomodori", "Carciofi Fritti", "Grissini della Casa", "Spaghetti al Pomodoro", "Rigatoni alla Vodka", "Pasta Primavera", "Fettuccine Alfredo", "Melanzane alla Parmigiana"}
+    for cid, title, intro, items in MENU:
+        sec = {"@type": "MenuSection", "name": title, "hasMenuItem": []}
+        for n, en, p, note in items:
+            it = {"@type": "MenuItem", "name": n, "description": en, "offers": {"@type": "Offer", "price": str(p), "priceCurrency": "USD"}}
+            if n in veg: it["suitableForDiet"] = "https://schema.org/VegetarianDiet"
+            sec["hasMenuItem"].append(it)
         menu_ld["hasMenuSection"].append(sec)
-    menu_body = f'''
-<header class="page-head"><div class="wrap">{{{{CRUMBS}}}}
-  <h1>La Carta</h1>
-  <p>Our dinner menu follows the market. Pasta is made in house daily, sauces simmer all afternoon, and every plate leaves the same kitchen: ours.</p>
-</div></header>
-<div class="wrap"><nav class="menu-index" aria-label="Menu sections">{idx}</nav>
-{courses}
-<p class="menu-note">Terrezano's does not offer delivery or carryout and never has. Every dish is prepared to order in our own kitchen. Consuming raw or undercooked meats, poultry or seafood may increase your risk of foodborne illness. Please tell your server about any allergies before ordering. A 20% service charge is added to parties of six or more.</p>
-</div>
-<section class="tight"></section>
-{band("Hungry yet?", "Book a table and Chef Luigi will start the water boiling.")}
+    menu = f'''
+{opener("La Carta", "Dinner, Tuesday through Sunday. The menu follows the market and the season, and the pasta is made in our kitchen the afternoon it is served.", [("Menu", "/menu/")])}
+<div class="wrap"><nav class="menu-jump" aria-label="Menu sections">{jump}</nav></div>
+<section style="padding-top:clamp(40px,5vw,64px)"><div class="wrap"><div class="carta">{courses}</div></div></section>
+<div class="wrap"><div class="photo-pair">
+  <figure class="photo">{img("calamari", "A pile of fried calamari on a dark plate", "(max-width: 760px) 100vw, 58vw")}</figure>
+  <figure class="photo tall">{img("burrata", "Burrata with tomatoes and greens on a plate", "(max-width: 760px) 100vw, 42vw")}</figure>
+</div></div>
+<section><div class="wrap"><div class="carta">{courses2}</div></div></section>
+<div class="wrap"><div class="photo-pair">
+  <figure class="photo">{img("bolognese", "Spaghetti with meat ragù and basil", "(max-width: 760px) 100vw, 58vw")}</figure>
+  <figure class="photo tall">{img("cannoli", "Cannoli piled high at a pastry counter", "(max-width: 760px) 100vw, 42vw")}</figure>
+</div></div>
+<section><div class="wrap"><div class="carta">{"".join(course_html(*c) for c in WINE)}
+  <p class="menu-fine">Parties of six or more receive a 20% service charge. Consuming raw or undercooked meat, poultry or seafood may increase your risk of foodborne illness. Please tell your server about allergies before ordering. We do not offer delivery or takeout.</p>
+</div></div></section>
 '''
-    pages["/menu/"] = page("/menu/", "Dinner Menu | Terrezano's Italian Restaurant NYC",
-        "See the Terrezano's dinner menu: antipasti, handmade pasta like spaghetti al pomodoro and rigatoni alla vodka, secondi, house dolci and Italian wine. Prices and vegetarian options.",
-        menu_body, "/menu/", [menu_ld], [("Menu", "/menu/")])
+    pages["/menu/"] = page("/menu/", "Dinner Menu | Terrezano's, Neapolitan Italian in Midtown NYC",
+        "The Terrezano's dinner menu: antipasti, handmade pasta like spaghetti al pomodoro and ziti alla Genovese, secondi, Neapolitan desserts and wines from Campania. Prices and vegetarian dishes.",
+        menu, "/menu/", [menu_ld], [("Menu", "/menu/")])
 
-    # STORY
+    # STORY ---------------------------------------------------------------
     story = f'''
-<header class="page-head"><div class="wrap">{{{{CRUMBS}}}}
-  <h1>A family table on <em>Rockefeller Lane</em></h1>
-  <p>How a small trattoria near the studios became Midtown's favorite plate of pasta, and stayed that way through one very complicated Saturday night.</p>
-</div></header>
-<section><div class="wrap split">
-  <div class="pullquote">"If the sauce is not right, it does not leave the kitchen. Nothing leaves the kitchen. Everything comes from the kitchen."<span>Chef Luigi Marinara</span></div>
-  <div class="prose dropcap">
-    <p>Terrezano's opened its doors on a Saturday night in late September, the kind of night when the whole city seems to be out looking for something live. Chef Luigi Marinara brought the recipes his family has cooked for generations: a Sunday gravy that simmers for six hours, a vodka sauce finished with real Calabrian chili, and fettuccine cut by hand to the width of his thumb.</p>
-    <p>We are a small room with checked tablecloths, Chianti bottles holding their candles, and a staff that will remember your order the second time you visit. Couples get engaged here. Families argue happily about whose turn it is to pay. Regulars tell us our pasta is the best they have ever had, and we believe them, because we watched Luigi make it.</p>
-    <p>Every dish on our menu comes out of one kitchen, ours, through the swinging door at the back of the dining room. You are always welcome to peek. That door has nothing to hide.</p>
+{opener("Our story", "A trattoria with three tables on the Bay of Naples, a notebook of recipes in dialect, and a dining room on Rockefeller Lane that opened on a Saturday night in 2017.", [("Our Story", "/our-story/")])}
+<div class="banner">{img("hero-dining-room", "Red walls, brass sconces and a checked tablecloth at a window table", "100vw")}</div>
+<section><div class="narrow flow">
+  <h2>Rosa's three tables</h2>
+  <p class="lede">For forty years, Rosa Terrezano ran a trattoria on the ground floor of her building near the port in Torre del Greco, the coral-carving town on the Bay of Naples that sits under Vesuvius. It had three tables, no menu and no sign.</p>
+  <p>The fishermen ate there at noon, the coral carvers at one, and Rosa's family whenever there was room. She cooked whatever came off the boats and out of the garden, and on Sundays she made the ragù that her grandson still makes today: beef, pork rib and braciole in tomato, kept at the barest simmer for six hours. In Naples they say the ragù has to <em>pippiare</em>, to murmur in the pot without ever quite boiling. Rosa's did.</p>
+  <p>She never wrote a review of anyone's cooking, including her own. Her highest praise was a nod. On a very good day, she would say <em>yum yum, buono</em>, a phrase she picked up from an American sailor in 1958 and never let go of.</p>
+</div></section>
+<section class="alt"><div class="wrap split">
+  {photo("nonna-tomatoes", "Hands peeling ripe tomatoes into a bowl at a kitchen table", "r-land", "Tomatoes are still peeled by hand, every morning, the way Rosa did them.")}
+  <div class="copy">
+    <h2>The notebook</h2>
+    <p>When Rosa died in 1993 she left her grandson Claudio, whom she had always called Luigi, two things: her wooden spoon and a school notebook of recipes written in Neapolitan dialect. Nothing in it is measured. The instructions for the Genovese say to cook the onions "until they give up."</p>
+    <p class="muted">That notebook sits on a shelf above the pass in our kitchen. The spoon is still in use.</p>
   </div>
 </div></section>
-<section class="alt"><div class="wrap">
-  <div class="sec-head"><h2>Our first night</h2><p class="muted measure">September 30. We remember it hour by hour.</p></div>
-  <ol class="timeline">
-    <li><time>5:00 pm</time><div><strong>Doors open</strong><p>Checked tablecloths pressed, candles lit, the Sunday gravy six hours in. Luigi tastes it twice and nods.</p></div></li>
-    <li><time>7:30 pm</time><div><strong>The first regulars arrive</strong><p>A couple at table six orders the spaghetti al pomodoro. She tells the table she is half Italian and knows pasta. He agrees with everything she says.</p></div></li>
-    <li><time>11:30 pm</time><div><strong>A very friendly man in a suit appears</strong><p>He has a microphone and an announcement about where the food came from. We do not remember what he said. We have chosen not to.</p></div></li>
-    <li><time>11:31 pm</time><div><strong>Things get loud</strong><p>Table six has questions. Mark is asked, several times, to back somebody up. Luigi stays in the kitchen, where he has always been.</p></div></li>
-    <li><time>Every night since</time><div><strong>Real pasta, real kitchen</strong><p>Rolled every afternoon, cooked to order, served by people who will look you in the eye and tell you exactly where it came from. Here.</p></div></li>
-  </ol>
+<section><div class="narrow flow">
+  <h2>Rockefeller Lane</h2>
+  <p>Luigi spent twenty-three years cooking in New York before he opened a restaurant of his own. In 2017 he found an empty warehouse on Rockefeller Lane, two blocks from the studios, and moved in with nothing but Rosa's three tables, shipped from Torre del Greco in a single crate.</p>
+  <p>Terrezano's opened on Saturday, September 30, 2017. On opening night the room really was a warehouse with three tables. One couple ordered the pasta primavera, declared it the best pasta they had ever eaten, and made it very clear to everyone in the room that Terrezano's was their favorite restaurant. It was a memorable evening, and we still talk about it.</p>
+  <p>Since then the room has filled out: red plaster walls, brass sconces, framed photographs from Torre del Greco, white tablecloths at night. Rosa's tables are still by the front window. A year later, Luigi's brother Domenico opened his espresso bar next door.</p>
+  <blockquote class="pull">"In my grandmother's house, if you looked a guest in the eye and said you cooked their food, you cooked their food. Where we come from, that means something."<cite>Chef Luigi Marinara</cite></blockquote>
 </div></section>
-<section><div class="wrap split">
-  <h2>What we promise</h2>
-  <dl class="policy">
-    <div><dt>Everything from scratch</dt><dd>Pasta, sauces, breadsticks, dolci and limoncello are made in our kitchen.</dd></div>
-    <div><dt>Ingredients we can name</dt><dd>San Marzano tomatoes, Parmigiano-Reggiano aged 24 months, olive oil from a family press in Puglia.</dd></div>
-    <div><dt>No surprises</dt><dd>Nobody will jump out with a microphone. The only reveal at Terrezano's is dessert.</dd></div>
-  </dl>
+<section class="alt"><div class="wrap split wide-left">
+  {photo("pasta-hands", "Hands feeding fresh pasta through a pasta machine", "r-land")}
+  <div class="copy">
+    <h2>How we cook</h2>
+    <dl class="terms" style="width:100%">
+      <div><dt>Every afternoon</dt><dd>Pasta rolled and cut by hand, by Luigi and two cooks who trained with him.</dd></div>
+      <div><dt>Every day at noon</dt><dd>The ragù goes on. It is ready at six.</dd></div>
+      <div><dt>Every plate</dt><dd>Passes in front of Luigi before it leaves the kitchen.</dd></div>
+      <div><dt>Never</dt><dd>Jarred sauce, boxed pasta, delivery, or food from anywhere but our own stove.</dd></div>
+    </dl>
+  </div>
 </div></section>
-{band("Come see for yourself", "The kitchen door swings both ways. Bring someone you want to impress.")}
+<section class="tight oxblood"><div class="wrap center" style="display:grid;gap:24px;justify-items:center"><h2>Come and eat</h2><p class="muted measure">Rosa's tables are by the window. Ask for one when you book.</p><div class="btn-row"><a class="btn light" href="/reservations/">Reserve a table</a></div></div></section>
 '''
-    pages["/our-story/"] = page("/our-story/", "Our Story | Terrezano's Ristorante, Midtown Manhattan",
-        "The story of Terrezano's, a family Italian trattoria near Rockefeller Center where Chef Luigi Marinara makes every pasta and sauce from scratch.",
-        story, "/our-story/", [{"@context": "https://schema.org", "@type": "AboutPage", "name": "Our Story", "url": SITE + "/our-story/", "about": {"@id": SITE + "/#restaurant"}}],
-        [("Our Story", "/our-story/")])
+    pages["/our-story/"] = page("/our-story/", "Our Story | Terrezano's, from Torre del Greco to Rockefeller Lane",
+        "How Terrezano's began: Rosa Terrezano's three-table trattoria in Torre del Greco on the Bay of Naples, her recipe notebook, and the Midtown dining room her grandson Chef Luigi Marinara opened in 2017.",
+        story, "/our-story/", [{"@context": "https://schema.org", "@type": "AboutPage", "name": "Our Story", "url": SITE + "/our-story/", "about": {"@id": RESTAURANT_ID}}], [("Our Story", "/our-story/")])
 
-    # CHEF
+    # CHEF ----------------------------------------------------------------
+    def chapter(year, place, title, body, extra=""):
+        return f'''<article class="chapter"><div class="when"><strong>{year}</strong><span>{place}</span></div>
+<div class="body"><h3>{title}</h3>{body}{extra}</div></article>'''
+    chapters = "".join([
+        chapter("1968", "Torre del Greco", "A coral town on the bay",
+            "<p>Claudio Luigi Marinara was born on March 3, 1968, in Torre del Greco, a fishing and coral-carving town on the Bay of Naples, in the shadow of Vesuvius. His father, Salvatore, carved cameos from coral and shell in a workshop off the main street. His mother, Assunta, was a seamstress who wanted at least one of her five children to become a lawyer.</p><p>The family lived above his grandmother Rosa's trattoria. Everyone called the boy Claudio except Rosa, who called him Luigi, after her late husband, from the day he was born. Nobody remembers anyone ever asking her why.</p>",
+            photo("bay-of-naples", "Vesuvius across the Bay of Naples under a blue sky", "r-land", "The view from the end of Rosa's street.", "(max-width: 760px) 100vw, 60vw")),
+        chapter("1977", "Rosa's kitchen", "The boy at the stove",
+            "<p>At nine he was peeling tomatoes for the Sunday ragù. At eleven he was trusted to stir it, which in Rosa's kitchen meant sitting by the pot for six hours and making sure it never did more than murmur. At thirteen he made his first spaghetti al pomodoro for the coral carvers at lunch. Rosa tasted it, nodded, and said nothing, which he understood to be the greatest compliment he would ever receive.</p><p>He learned the Neapolitan Sunday table: the Genovese that takes all day, paccheri under a ragù dark as wine, babà soaked in rum for the end of the meal, and the rule that a good cook never tells a guest a plate came from somewhere it didn't.</p>"),
+        chapter("1986", "Naples", "One semester of law",
+            "<p>To please his mother, Claudio enrolled in law at the University of Naples. He lasted one semester. He spent most of it cooking dinner for his classmates in a borrowed apartment near Via Toledo, and his professors agreed, without much argument from him, that he would have been disbarred within a year.</p><p>He went home, apologized to his mother, and asked Rosa for a job. She gave him the lunch shift.</p>"),
+        chapter("1987", "Capri and Sorrento", "Ferries, hotels and fresh pasta",
+            "<p>He cooked in the galley of the ferries that cross to Capri, where he learned to feed two hundred people in an hour in a moving kitchen. Then came five years in the hotel kitchens of Sorrento, under a Bolognese pasta maker who taught him to roll egg dough so thin you could read a newspaper through it. Rosa thought this was a lot of fuss. She was secretly very proud.</p>",
+            photo("pasta-machine", "Hands lifting fresh tagliatelle from a pasta machine", "r-tall", "", "(max-width: 760px) 100vw, 50vw")),
+        chapter("1993", "Torre del Greco", "The spoon and the notebook",
+            "<p>Rosa died in the winter of 1993. She left her grandson her wooden spoon and a school notebook of recipes in Neapolitan dialect, with no measurements and a great many opinions. The trattoria closed. The three tables went into storage in his father's workshop, where they waited for twenty-four years.</p>"),
+        chapter("1994", "Mulberry Street", "New York",
+            "<p>He landed at JFK in March 1994 with the spoon, the notebook and a suitcase of his mother's jarred tomatoes, which customs let through after a long conversation. His first job was on the line of a Mulberry Street restaurant in Little Italy, making red sauce for tourists. His second was on Arthur Avenue in the Bronx, cooking for people whose grandmothers were from the same towns as his.</p>",
+            photo("little-italy", "A Little Italy street in New York with fire escapes and holiday lights", "r-land", "Mulberry Street, where Luigi cooked his first New York service.", "(max-width: 760px) 100vw, 60vw")),
+        chapter("2004", "Midtown", "The catering years",
+            "<p>For thirteen years Luigi cooked for a Midtown company that fed film, television and commercial shoots. He made lunch for crews at dawn and dishes that were only meant to be looked at, under hot lights, for people who were paid to look like they were enjoying them. He learned exactly how easily a camera can make anything look like anything.</p><p>He describes those years as educational and does not say much more. What he took from them was a promise to himself: when he finally had his own dining room, every plate would come from his own stove, and he would tell every guest so to their face.</p>"),
+        chapter("2017", "Rockefeller Lane", "Terrezano's",
+            "<p>In 2017 he signed the lease on an empty warehouse on Rockefeller Lane, shipped Rosa's three tables from Torre del Greco, and named the restaurant after her. Terrezano's opened on Saturday, September 30, 2017. It was a loud night. He remembers all of it.</p>"),
+        chapter("2018", "Next door", "Domenico arrives",
+            "<p>His youngest brother, Domenico, who had spent twenty years pulling espresso in the bars of Naples, came over the following summer. Domenico's Caffè opened next door on September 29, 2018. The brothers have argued about coffee every morning since.</p>"),
+    ])
+    chef_ld = {"@context": "https://schema.org", "@type": "Person", "@id": LUIGI_ID, "name": "Luigi Marinara", "alternateName": ["Claudio Luigi Marinara", "Chef Luigi"],
+               "jobTitle": "Executive Chef and Owner", "birthDate": "1968-03-03", "birthPlace": {"@type": "Place", "name": "Torre del Greco, Italy"},
+               "worksFor": {"@id": RESTAURANT_ID}, "url": SITE + "/chef-luigi/", "image": SITE + "/img/chef-luigi-1400.jpg",
+               "knowsAbout": ["Neapolitan cuisine", "Fresh pasta", "Ragù napoletano"], "sibling": {"@type": "Person", "name": "Domenico Marinara"}}
     chef = f'''
-<header class="page-head"><div class="wrap">{{{{CRUMBS}}}}
-  <h1>Chef Luigi <em>Marinara</em></h1>
-  <p>Executive chef, owner of the tallest hat in Midtown, and the only person who has ever cooked a plate of food at Terrezano's.</p>
-</div></header>
-<section><div class="wrap split center">
-  <div class="portrait">{PORTRAIT}</div>
-  <div class="stack">
-    <p class="measure">Luigi learned to cook at his grandmother's stove in a village just outside Naples, near enough to Naples that he says Naples when people ask. He came to New York with a wooden spoon, a sourdough starter and a firm belief that sauce should never come out of a jar.</p>
-    <p class="measure">You will find him in the kitchen every night we are open, and sometimes in the dining room, where he likes to ask guests how their food is. If you see a man in a tall white hat, that is Luigi. If someone tells you it is not Luigi, that person is mistaken.</p>
+<section style="padding-bottom:0"><div class="wrap split top">
+  {photo("chef-luigi", "Chef Luigi Marinara in his toque, holding a ladle up to the light in the kitchen", "r-portrait", "Chef Luigi in the kitchen on Rockefeller Lane.")}
+  <div class="copy">
+    <nav class="crumbs" aria-label="Breadcrumb" style="justify-content:flex-start"><a href="/">Home</a><span aria-hidden="true">/</span><span aria-current="page">Chef Luigi</span></nav>
+    <h1>Chef Luigi Marinara</h1>
+    <hr class="rule">
+    <p class="lede">Executive chef and owner of Terrezano's. Born in Torre del Greco, raised at his grandmother's stove, and cooking in New York since 1994.</p>
     <dl class="facts">
-      <div><dt>Name</dt><dd>Luigi Marinara (real)</dd></div>
-      <div><dt>Signature</dt><dd>Spaghetti al pomodoro</dd></div>
-      <div><dt>Will not discuss</dt><dd>Commercials</dd></div>
+      <dt>Born</dt><dd>Claudio Luigi Marinara, March 3, 1968</dd>
+      <dt>Hometown</dt><dd>Torre del Greco, on the Bay of Naples</dd>
+      <dt>Trained</dt><dd>Rosa Terrezano's trattoria, the Capri ferries, Sorrento</dd>
+      <dt>Signature</dt><dd>Spaghetti al pomodoro and the Sunday ragù</dd>
+      <dt>Answers to</dt><dd>Luigi in the dining room, Claudio at home, Claud to his oldest friends</dd>
     </dl>
   </div>
 </div></section>
+<section><div class="wrap">{chapters}</div></section>
 <section class="alt"><div class="wrap split">
-  <div class="stack"><h2>Luigi's kitchen rules</h2><p class="muted">Posted above the pass. Followed every night.</p></div>
-  <ol class="rules">
-    <li><div><strong>Salt the water like the sea</strong><p class="muted">If the water is not salty, the pasta is not happy.</p></div></li>
-    <li><div><strong>Never break the spaghetti</strong><p class="muted">The pot is big enough. Be patient.</p></div></li>
-    <li><div><strong>The sauce finishes in the pan</strong><p class="muted">Pasta and sauce meet over heat with a splash of cooking water, every time.</p></div></li>
-    <li><div><strong>Nothing comes in a box</strong><p class="muted">Not the pasta, not the breadsticks, not the sauce. Nothing. Ever.</p></div></li>
-    <li><div><strong>If anyone asks, the chef cooked it</strong><p class="muted">Because the chef cooked it.</p></div></li>
-  </ol>
+  <div class="copy">
+    <h2>A day in Luigi's kitchen</h2>
+    <dl class="terms" style="width:100%">
+      <div><dt>10:30 am</dt><dd>Espresso next door. An argument with Domenico about the grind.</dd></div>
+      <div><dt>11:00 am</dt><dd>Tomatoes peeled, onions on for the Genovese.</dd></div>
+      <div><dt>Noon</dt><dd>The ragù goes on, in Rosa's pot, stirred with Rosa's spoon.</dd></div>
+      <div><dt>3:00 pm</dt><dd>Pasta rolled and cut for the night.</dd></div>
+      <div><dt>5:00 pm</dt><dd>Doors open. Luigi tastes every sauce one last time.</dd></div>
+      <div><dt>All night</dt><dd>Every plate passes him. He visits every table at least once.</dd></div>
+    </dl>
+  </div>
+  {photo("flour-egg", "Eggs cracked into a well of flour on a wooden board", "r-square")}
 </div></section>
-{band("Taste Luigi's cooking", "Book a table, order the pomodoro, and tell him we sent you.")}
+<section><div class="narrow"><blockquote class="pull">"People ask me if I really cook the food. I say come to the kitchen door and watch. Nobody has ever been disappointed, and nobody has ever needed a lawyer."<cite>Chef Luigi Marinara</cite></blockquote></div></section>
+<section class="tight oxblood"><div class="wrap center" style="display:grid;gap:24px;justify-items:center"><h2>Taste Rosa's recipes</h2><div class="btn-row"><a class="btn light" href="/reservations/">Reserve a table</a><a class="btn light" href="/menu/">See the menu</a></div></div></section>
 '''
-    chef_ld = {"@context": "https://schema.org", "@type": "Person", "name": "Luigi Marinara", "jobTitle": "Executive Chef",
-               "worksFor": {"@id": SITE + "/#restaurant"}, "url": SITE + "/chef-luigi/", "knowsAbout": ["Italian cuisine", "Fresh pasta", "Neapolitan cooking"]}
-    pages["/chef-luigi/"] = page("/chef-luigi/", "Chef Luigi Marinara | Executive Chef at Terrezano's NYC",
-        "Meet Chef Luigi Marinara, the Naples-raised executive chef who cooks every plate at Terrezano's, Midtown Manhattan's handmade pasta restaurant.",
-        chef, "/chef-luigi/", [chef_ld], [("Chef Luigi", "/chef-luigi/")])
+    pages["/chef-luigi/"] = page("/chef-luigi/", "Chef Luigi Marinara | Executive Chef of Terrezano's NYC",
+        "The life of Chef Luigi Marinara: born in Torre del Greco on the Bay of Naples, trained in his grandmother's trattoria, on the Capri ferries and in Sorrento, cooking in New York since 1994 and at Terrezano's since 2017.",
+        chef, "/chef-luigi/", [chef_ld], [("Chef Luigi", "/chef-luigi/")], og_image="/og-luigi.jpg")
 
-    # RESERVATIONS
-    res = f'''
-<header class="page-head"><div class="wrap">{{{{CRUMBS}}}}
-  <h1>Reserve a table</h1>
-  <p>Tables open 30 days ahead. For parties larger than eight, or anything involving a ring, call us at {PHONE}.</p>
-</div></header>
+    # DOMENICO'S ----------------------------------------------------------
+    d_courses = "".join(course_html(*c) for c in D_MENU)
+    d_ld = cafe_ld()
+    d_ld["hasMenu"] = {"@type": "Menu", "name": "Domenico's Caffè Menu", "hasMenuSection": [
+        {"@type": "MenuSection", "name": t, "hasMenuItem": [{"@type": "MenuItem", "name": n, "description": en, "offers": {"@type": "Offer", "price": p, "priceCurrency": "USD"}} for n, en, p, note in items]}
+        for cid, t, intro, items in D_MENU]}
+    dom = f'''
+<section class="green" style="padding-bottom:0"><div class="wrap split top">
+  <div class="copy" style="padding-bottom:clamp(40px,6vw,80px)">
+    <nav class="crumbs" aria-label="Breadcrumb" style="justify-content:flex-start"><a href="/">Home</a><span aria-hidden="true">/</span><span aria-current="page">Domenico's</span></nav>
+    <h1>Domenico's Caffè</h1>
+    <hr class="rule">
+    <p class="lede">A Neapolitan espresso bar next door to Terrezano's, run by Luigi's youngest brother, Domenico Marinara. Open every morning from 7.</p>
+    <p class="muted">{D_STREET}, New York. Telephone {D_PHONE}.</p>
+  </div>
+  {photo("caffe-sign", "An old caffè storefront with a painted sign and a case of pastries in the window", "r-portrait")}
+</div></section>
 <section><div class="wrap split">
-  <div class="stack">
-    <h2>Good to know</h2>
-    <dl class="policy">
-      <div><dt>Grace period</dt><dd>We hold tables for 15 minutes past your booking time.</dd></div>
-      <div><dt>Large parties</dt><dd>Six or more receive a 20% service charge. Nine or more, see <a class="textlink" href="/private-events/">private events</a>.</dd></div>
-      <div><dt>The bar</dt><dd>First come, first served, full menu available.</dd></div>
-      <div><dt>Celebrations</dt><dd>Tell us in the notes. We will make it special, and we will make sure nobody jumps out with a microphone.</dd></div>
-      <div><dt>Cancellations</dt><dd>Please give us 24 hours. Luigi starts the pasta for you that afternoon.</dd></div>
+  <div class="copy">
+    <h2>Domenico knows coffee</h2>
+    <p>Domenico Marinara was born in Torre del Greco in 1975, the last of five. While his brother Claudio was learning to cook, Domenico was learning to pull espresso, first at the bar on the corner of their street and then for twenty years in the old caffès along Via Toledo in Naples, where the coffee is short, dark and sweet and the customers have very strong opinions.</p>
+    <p>He followed Luigi to New York in the summer of 2018 with a lever espresso machine in a crate and opened Domenico's next door to the restaurant on Saturday, September 29, 2018. The coffee is roasted dark in the Neapolitan style by a small roaster in Brooklyn and is made from coffee beans and nothing else.</p>
+  </div>
+  {photo("domenicos-bar", "A curved wooden bar under a white arch, with bottles on the shelves and tiled floors", "r-tall")}
+</div></section>
+<section class="alt"><div class="wrap"><div class="carta">{d_courses}
+  <p class="menu-fine">Every coffee is made to order on a lever machine. Prices have never been, and will never be, $1.99.</p>
+</div></div></section>
+<section><div class="wrap split wide-left">
+  {photo("espresso-glass", "A short espresso in a glass on a saucer on a wooden counter", "r-tall")}
+  <div class="copy">
+    <h2>House customs</h2>
+    <dl class="terms" style="width:100%">
+      <div><dt>Caffè sospeso</dt><dd>The Neapolitan tradition of paying for a second coffee for whoever comes in next and cannot afford one. Ask at the register if there is one waiting.</dd></div>
+      <div><dt>Newlyweds</dt><dd>Domenico's very first customers were a couple the morning after their wedding. They ordered two Americanos and called it the best coffee of their lives. Ever since, any couple in on the day after their wedding drinks for free.</dd></div>
+      <div><dt>Our regulars</dt><dd>The ones who come every morning have a name for themselves. Ask one. They will tell you, loudly.</dd></div>
+      <div><dt>The baristas</dt><dd>All three trained with Domenico, and every one of them is a real barista. Please do not call them batistas.</dd></div>
     </dl>
   </div>
-  {res_form()}
 </div></section>
-'''
-    pages["/reservations/"] = page("/reservations/", "Reservations | Book a Table at Terrezano's NYC",
-        "Reserve a table at Terrezano's, the handmade pasta restaurant in Midtown Manhattan. Book online for parties up to eight, open Tuesday through Sunday.",
-        res, None, [{"@context": "https://schema.org", "@type": "ReserveAction", "target": SITE + "/reservations/", "object": {"@id": SITE + "/#restaurant"}}],
-        [("Reservations", "/reservations/")])
-
-    # PRIVATE EVENTS
-    ev = f'''
-<header class="page-head"><div class="wrap">{{{{CRUMBS}}}}
-  <h1>Private dining &amp; events</h1>
-  <p>Rehearsal dinners, birthdays, office parties and engagement dinners, with a family-style menu from Chef Luigi and a staff that knows how to keep a secret.</p>
-</div></header>
-<section><div class="wrap">
-  <div class="sec-head"><h2>Three ways to gather</h2></div>
-  <div class="rooms">
-    <article><span class="cap">Up to 2 guests</span><h3>Table Six</h3><p class="muted">Our most requested table, by the window, set with candles and Prosecco on ice. The unofficial proposal table of Midtown.</p></article>
-    <article><span class="cap">20 to 40 guests</span><h3>La Sala Verde</h3><p class="muted">The back room behind the green curtain, with its own long table and a view of the kitchen door. Family-style menus from $75 per person.</p></article>
-    <article><span class="cap">Up to 90 guests</span><h3>Full buyout</h3><p class="muted">The whole restaurant, start to finish. Popular for wrap parties, especially late on Saturday nights.</p></article>
+<section class="tight green"><div class="wrap">
+  <div class="split top">
+    <div class="copy"><h2>Hours</h2>{hours_dl(D_HOURS)}</div>
+    <div class="copy"><h2>Find us</h2><p>{D_STREET}<br>{CITY}, {REGION} {ZIP}</p><p class="muted">Next door to Terrezano's, between Fifth and Sixth Avenues. Dessert at the restaurant comes with Domenico's espresso.</p><a class="more" href="/visit/">Directions</a></div>
   </div>
 </div></section>
-<section class="alt"><div class="wrap split">
-  <div class="stack">
-    <h2>Plan your event</h2>
-    <p class="muted measure">Send us the basics and our events team will call you within two days with menus and availability.</p>
-    <p class="muted measure">Every event menu is cooked in our own kitchen by Chef Luigi. We do not cater from anywhere else, and we will not be pretending otherwise for a camera.</p>
+'''
+    pages["/domenicos/"] = page("/domenicos/", "Domenico's Caffè | Neapolitan Espresso Bar near Rockefeller Center",
+        "Domenico's Caffè is the Neapolitan espresso bar next door to Terrezano's in Midtown Manhattan. Espresso, Americano, cappuccino, sfogliatelle and biscotti from 7 am, run by Domenico Marinara.",
+        dom, "/domenicos/", [d_ld], [("Domenico's", "/domenicos/")], og_image="/og-domenicos.jpg")
+
+    # PRIVATE DINING ------------------------------------------------------
+    pd = f'''
+{opener("Private dining", "Rehearsal dinners, birthdays, engagements and long Sunday lunches, with family-style menus cooked by Chef Luigi and a staff that knows how to keep a secret.", [("Private Dining", "/private-dining/")])}
+<div class="banner">{img("wine-pour", "Red wine being poured into a glass at a table set for dinner", "100vw")}</div>
+<section><div class="wrap">
+  <div class="rooms">
+    <article><span class="caps cap">Up to 2 guests</span><h3>Tavola Sei</h3><p class="muted">Table six, the corner table by the front window and one of Rosa's original three. Candles, Prosecco on ice and a dessert with a ring hidden near it if you ask. The most requested table in the house.</p></article>
+    <article><span class="caps cap">12 to 40 guests</span><h3>Sala Otto</h3><p class="muted">The back room behind the curtain, with one long table and a view of the kitchen door. It is named for the eighth floor of the building down the street where Luigi spent many late Saturday nights. Family-style menus from $85 per person.</p></article>
+    <article><span class="caps cap">Up to 90 guests</span><h3>The whole house</h3><p class="muted">Terrezano's from the first antipasto to the last limoncello, with Domenico's next door for a morning-after breakfast. Popular for wedding receptions and wrap parties.</p></article>
+  </div>
+</div></section>
+<section class="alt"><div class="wrap split top">
+  <div class="copy">
+    <h2>Plan an event</h2>
+    <p>Send us the basics and our events manager will call within two days with menus and dates.</p>
+    <dl class="terms" style="width:100%">
+      <div><dt>Menus</dt><dd>Family-style, three or four courses, built around the Sunday ragù or the fish of the day.</dd></div>
+      <div><dt>Photography</dt><dd>Our house photographer is available for events. Anyone who appears in a photo is asked to sign a release first, and is welcome to say no.</dd></div>
+      <div><dt>Deposits</dt><dd>25% to hold the date, fully refundable up to 14 days before.</dd></div>
+    </dl>
   </div>
   {res_form("event")}
 </div></section>
 '''
-    pages["/private-events/"] = page("/private-events/", "Private Dining & Events | Terrezano's Midtown NYC",
-        "Host a private dinner, rehearsal dinner, birthday or proposal at Terrezano's in Midtown Manhattan. Private room for 40, full buyout for 90, family-style Italian menus.",
-        ev, "/private-events/", None, [("Private Events", "/private-events/")])
+    pages["/private-dining/"] = page("/private-dining/", "Private Dining & Events | Terrezano's Midtown NYC",
+        "Host a rehearsal dinner, birthday, engagement or full buyout at Terrezano's near Rockefeller Center: a private room for 40, the whole restaurant for 90, and family-style Neapolitan menus.",
+        pd, "/private-dining/", None, [("Private Dining", "/private-dining/")])
 
-    # VISIT
-    visit = f'''
-<header class="page-head"><div class="wrap">{{{{CRUMBS}}}}
-  <h1>Hours &amp; location</h1>
-  <p>Two blocks from the studios in Midtown. Look for the green awning, and on Saturday nights, the line.</p>
-</div></header>
-<section><div class="wrap">
-  <div class="visit-grid">
-    <div><h3>Find us</h3><p>{STREET}<br>{CITY}, {REGION} {ZIP}</p><p class="muted">Between Fifth and Sixth Avenues, on the block with the ice rink nearby.</p></div>
-    <div><h3>Dinner hours</h3><dl class="hours">{hours_rows()}</dl><p class="muted">Open late on Saturdays. We are always live from New York.</p></div>
-    <div><h3>Call us</h3><p class="copyable" id="phone">{PHONE}</p><button class="linkbtn" type="button" data-copy="phone">Copy number</button><p class="muted">A real person answers. Usually Luigi's cousin.</p></div>
-  </div>
-  <div class="mapbox" style="margin-top:64px">{MAP}</div>
-</div></section>
-<section class="alt"><div class="wrap split">
-  <h2>Getting here</h2>
-  <dl class="policy">
-    <div><dt>Subway</dt><dd>B, D, F or M to 47-50 Sts Rockefeller Center, then a three minute walk.</dd></div>
-    <div><dt>Parking</dt><dd>Garages on West 49th and West 50th. We do not validate, but Luigi will wave.</dd></div>
-    <div><dt>Accessibility</dt><dd>Step-free entrance on Rockefeller Lane, accessible restroom on the dining room level.</dd></div>
-    <div><dt>Delivery</dt><dd>None. Not now, not ever, not in a box with a roof on it.</dd></div>
-  </dl>
-</div></section>
-'''
-    pages["/visit/"] = page("/visit/", "Hours & Location | Terrezano's near Rockefeller Center",
-        "Terrezano's hours, address and directions: 43 Rockefeller Lane, New York, NY 10112, near the 47-50 Sts Rockefeller Center subway. Open Tuesday through Sunday for dinner.",
-        visit, "/visit/", [restaurant_ld()], [("Hours & Location", "/visit/")])
-
-    # FAQ
-    groups = ""
-    faq_items = []
-    for gname, qs in FAQ:
-        dets = "".join(f"<details><summary>{esc(q)}</summary><p>{esc(a)}</p></details>" for q, a in qs)
-        groups += f'<div class="faq-group"><h2>{esc(gname)}</h2><div class="faq-list">{dets}</div></div>'
-        faq_items += [{"@type": "Question", "name": q, "acceptedAnswer": {"@type": "Answer", "text": a}} for q, a in qs]
-    faq = f'''
-<header class="page-head"><div class="wrap">{{{{CRUMBS}}}}
-  <h1>Questions we get</h1>
-  <p>About the food, the reservations, and a few rumors we would like to put to rest.</p>
-</div></header>
-<section><div class="wrap">{groups}</div></section>
-{band("Still curious?", "Come in and ask Luigi yourself. He is in the kitchen.")}
-'''
-    pages["/faq/"] = page("/faq/", "FAQ | Terrezano's Italian Restaurant NYC",
-        "Answers about Terrezano's: house-made pasta, gluten-free and vegetarian options, reservations, hours, proposals, delivery and whether Chef Luigi is real.",
-        faq, "/faq/", [{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": faq_items}], [("FAQ", "/faq/")])
-
-    # SNL
-    snl = f'''
-<header class="page-head"><div class="wrap">{{{{CRUMBS}}}}
-  <h1>As seen on <em>Saturday Night Live</em></h1>
-  <p>Terrezano's first appeared in "Italian Restaurant," a sketch from the Season 43 premiere of SNL. This site is a tribute to it.</p>
-</div></header>
-<section><div class="wrap split">
-  <div class="prose">
-    <p>In the sketch, a few couples taste pasta for what they think is a commercial about their favorite spot, Terrezano's. The host of the segment then reveals that the food actually came from Pizza Hut's new pasta line, in the style of those hidden-camera taste-test ads.</p>
-    <p>Most of the diners take it fine. One couple does not. Cecily Strong plays a fiancée who is proudly half Italian and certain she knows real pasta, and Ryan Gosling plays her furious partner, who keeps offering to beat the host to death while visibly trying not to laugh. Beck Bennett appears as Chef Luigi Marinara, who did not, in fact, cook the meal. Chris Redd plays Mark, whose support is requested repeatedly.</p>
-    <p>Gosling broke character more than once, and the sketch became one of the most remembered pieces of his hosting run. We built this site to answer one question: what if Terrezano's had been real all along?</p>
-  </div>
-  <div class="stack">
-    <dl class="credits">
-      <dt>Sketch</dt><dd>"Italian Restaurant"</dd>
-      <dt>Aired</dt><dd>September 30, 2017</dd>
-      <dt>Episode</dt><dd>Season 43, Episode 1</dd>
-      <dt>Host</dt><dd>Ryan Gosling, the fiancé</dd>
-      <dt>Cecily Strong</dt><dd>The half-Italian fiancée</dd>
-      <dt>Beck Bennett</dt><dd>Chef Luigi Marinara</dd>
-      <dt>Mikey Day</dt><dd>The commercial's patient host</dd>
-      <dt>Chris Redd</dt><dd>Mark</dd>
+    # RESERVATIONS --------------------------------------------------------
+    res = f'''
+{opener("Reservations", f"Tables open 30 days ahead. For parties larger than eight, call {PHONE} and ask for the events manager.", [("Reservations", "/reservations/")])}
+<section style="padding-top:0"><div class="wrap split top">
+  {res_form()}
+  <div class="copy">
+    <h2 style="font-size:clamp(1.7rem,3vw,2.3rem)">Before you come</h2>
+    <dl class="terms" style="width:100%">
+      <div><dt>Late arrivals</dt><dd>We hold tables for 15 minutes.</dd></div>
+      <div><dt>The bar</dt><dd>Walk-ins only, full menu, first come, first served.</dd></div>
+      <div><dt>Table six</dt><dd>Request it in your note. We cannot always promise it, but we try very hard for proposals.</dd></div>
+      <div><dt>Cancellations</dt><dd>Please give us a day's notice. Luigi starts the pasta for you that afternoon.</dd></div>
+      <div><dt>Large parties</dt><dd>Six or more receive a 20% service charge. Nine or more, see <a href="/private-dining/">private dining</a>.</dd></div>
     </dl>
-    <div class="linklist">
-      <a class="textlink" href="https://www.youtube.com/results?search_query=Italian+Restaurant+SNL+Ryan+Gosling+Cecily+Strong" rel="noopener">Watch it on YouTube</a>
-      <a class="textlink" href="https://en.wikipedia.org/wiki/Recurring_Saturday_Night_Live_characters_and_sketches_introduced_2017%E2%80%9318" rel="noopener">Wikipedia</a>
-      <a class="textlink" href="https://uproxx.com/tv/snl-ryan-gosling-pizza-hut-sketch/" rel="noopener">Uproxx recap</a>
-      <a class="textlink" href="https://collider.com/ryan-gosling-saturday-night-live-sketches-ranked/" rel="noopener">Collider ranking</a>
-    </div>
   </div>
 </div></section>
-<section class="alt"><div class="wrap">
-  <div class="sec-head"><h2>Easter eggs on this site</h2><p class="muted measure">A few things to look for while you browse.</p></div>
-  <dl class="policy">
-    <div><dt>43 Rockefeller Lane, 10112</dt><dd>Season 43, in the zip code of 30 Rockefeller Plaza.</dd></div>
-    <div><dt>(212) 555-0930</dt><dd>The air date, September 30.</dd></div>
-    <div><dt>Table six, Mark, the half-Italian regular</dt><dd>Everyone from the sketch has a seat here.</dd></div>
-    <div><dt>One pizza, no delivery, no cameras</dt><dd>Terrezano's is very sensitive about these topics.</dd></div>
+'''
+    pages["/reservations/"] = page("/reservations/", "Reservations | Book a Table at Terrezano's NYC",
+        "Reserve a table at Terrezano's, the Neapolitan Italian restaurant near Rockefeller Center. Book up to 30 days ahead for parties up to eight. Open Tuesday to Sunday for dinner.",
+        res, "/reservations/", [{"@context": "https://schema.org", "@type": "ReserveAction", "target": SITE + "/reservations/", "object": {"@id": RESTAURANT_ID}}], [("Reservations", "/reservations/")])
+
+    # VISIT ---------------------------------------------------------------
+    map_svg = '''<svg viewBox="0 0 900 420" role="img" aria-label="Map: Terrezano's at 43 and Domenico's at 44 Rockefeller Lane, between Fifth and Sixth Avenues, near the 47-50 Sts Rockefeller Center subway station">
+<rect width="900" height="420" fill="#f1ece2"/>
+<g fill="#fbf9f4"><rect x="30" y="30" width="200" height="120"/><rect x="270" y="30" width="360" height="120"/><rect x="670" y="30" width="200" height="120"/>
+<rect x="30" y="200" width="200" height="90"/><rect x="270" y="200" width="360" height="90"/><rect x="670" y="200" width="200" height="90"/>
+<rect x="30" y="330" width="200" height="70"/><rect x="270" y="330" width="360" height="70"/><rect x="670" y="330" width="200" height="70"/></g>
+<g font-family="Jost, Arial, sans-serif" font-size="12" letter-spacing="2" fill="#5f564e">
+<text x="250" y="22" text-anchor="middle">6TH AVE</text><text x="650" y="22" text-anchor="middle">5TH AVE</text>
+<text x="40" y="188">W 50TH ST</text><text x="40" y="318">W 49TH ST</text></g>
+<rect x="270" y="162" width="360" height="26" fill="#d9d0c1"/>
+<text x="450" y="180" text-anchor="middle" font-family="Jost, Arial, sans-serif" font-size="12" letter-spacing="3" fill="#1c1714">ROCKEFELLER LANE</text>
+<rect x="390" y="206" width="56" height="48" fill="#6c1b1b"/><text x="418" y="238" text-anchor="middle" font-family="Libre Caslon Display, Georgia, serif" font-size="24" fill="#f5ede0">T</text>
+<rect x="452" y="206" width="56" height="48" fill="#22402f"/><text x="480" y="238" text-anchor="middle" font-family="Libre Caslon Display, Georgia, serif" font-size="24" fill="#eef0e6">D</text>
+<text x="449" y="276" text-anchor="middle" font-family="Jost, Arial, sans-serif" font-size="12" fill="#1c1714">Nos. 43 and 44</text>
+<circle cx="250" cy="306" r="13" fill="#1c1714"/><text x="250" y="311" text-anchor="middle" font-family="Jost, Arial, sans-serif" font-size="13" font-weight="500" fill="#fbf9f4">M</text>
+<text x="40" y="372" font-family="Jost, Arial, sans-serif" font-size="12" fill="#5f564e">B D F M to 47-50 Sts Rockefeller Ctr</text></svg>'''
+    visit = f'''
+{opener("Visit", "Two blocks from the studios in Midtown Manhattan. Look for the brass lamps and, on Saturday nights, the line.", [("Visit", "/visit/")])}
+<section style="padding-top:0"><div class="wrap">
+  <div class="split top">
+    <div class="copy"><h2>Terrezano's</h2><p>{STREET}<br>{CITY}, {REGION} {ZIP}</p><p class="big-phone" id="phone">{PHONE}</p><button class="linkbtn" type="button" data-copy="phone">Copy number</button>{hours_dl(HOURS)}<p class="muted">Saturdays we stay open until 1 am for the late crowd.</p></div>
+    <div class="copy"><h2>Domenico's Caffè</h2><p>{D_STREET}<br>{CITY}, {REGION} {ZIP}</p><p class="big-phone" id="dphone">{D_PHONE}</p><button class="linkbtn" type="button" data-copy="dphone">Copy number</button>{hours_dl(D_HOURS)}</div>
+  </div>
+  <div class="mapbox" style="margin-top:clamp(48px,6vw,80px)">{map_svg}</div>
+</div></section>
+<section class="alt"><div class="wrap split top">
+  <h2>Getting here</h2>
+  <dl class="terms">
+    <div><dt>Subway</dt><dd>B, D, F or M to 47-50 Sts Rockefeller Center, then a three-minute walk east.</dd></div>
+    <div><dt>Parking</dt><dd>Garages on West 49th and West 50th Streets.</dd></div>
+    <div><dt>Access</dt><dd>Step-free entrances at both 43 and 44 Rockefeller Lane, and an accessible restroom on the dining room level.</dd></div>
+    <div><dt>Delivery</dt><dd>We do not deliver, and never have.</dd></div>
   </dl>
 </div></section>
 '''
-    snl_ld = {"@context": "https://schema.org", "@type": "TVEpisode", "name": "Ryan Gosling / Jay-Z", "episodeNumber": 1,
-              "partOfSeason": {"@type": "TVSeason", "seasonNumber": 43}, "partOfSeries": {"@type": "TVSeries", "name": "Saturday Night Live"},
-              "datePublished": "2017-09-30", "actor": [{"@type": "Person", "name": n} for n in ["Ryan Gosling", "Cecily Strong", "Beck Bennett", "Mikey Day", "Chris Redd"]]}
-    pages["/as-seen-on-snl/"] = page("/as-seen-on-snl/", "Terrezano's on SNL | The 2017 Italian Restaurant Sketch",
-        "Terrezano's is the fake Italian restaurant from SNL's 2017 'Italian Restaurant' sketch with Ryan Gosling and Cecily Strong. Cast, air date, where to watch and the easter eggs on this site.",
-        snl, None, [snl_ld], [("As Seen on SNL", "/as-seen-on-snl/")])
+    pages["/visit/"] = page("/visit/", "Hours & Directions | Terrezano's near Rockefeller Center",
+        "Terrezano's is at 43 Rockefeller Lane, New York, NY 10112, near the 47-50 Sts Rockefeller Center subway, with Domenico's Caffè next door at 44. Dinner Tuesday to Sunday, espresso daily from 7 am.",
+        visit, "/visit/", [restaurant_ld(), cafe_ld()], [("Visit", "/visit/")])
 
-    # 404
-    lost = '''
-<section class="lost"><div class="wrap stack">
-  <h1>This page did not come <em>from our kitchen.</em></h1>
-  <p class="muted measure">We looked everywhere. It is not on the menu, it is not in the back, and it was definitely not delivered.</p>
-  <div class="btn-row"><a class="btn primary" href="/">Back to Terrezano's</a><a class="btn" href="/menu/">See the menu</a></div>
+    # FAQ -----------------------------------------------------------------
+    groups, items = "", []
+    for g, qs in FAQ:
+        groups += f'<div class="faq-group"><h2>{esc(g)}</h2>' + "".join(f"<details><summary>{esc(q)}</summary><p>{esc(a)}</p></details>" for q, a in qs) + "</div>"
+        items += [{"@type": "Question", "name": q, "acceptedAnswer": {"@type": "Answer", "text": a}} for q, a in qs]
+    faq = f'''
+{opener("Questions", "About the food, booking a table, and a few things people ask us more often than you might expect.", [("FAQ", "/faq/")])}
+<section style="padding-top:0"><div class="narrow">{groups}</div></section>
+'''
+    pages["/faq/"] = page("/faq/", "FAQ | Terrezano's Italian Restaurant, Midtown NYC",
+        "Answers about Terrezano's: house-made pasta, reservations, vegetarian and gluten-free dishes, proposals at table six, delivery, and Chef Luigi Marinara.",
+        faq, None, [{"@context": "https://schema.org", "@type": "FAQPage", "mainEntity": items}], [("FAQ", "/faq/")])
+
+    # PRESS ---------------------------------------------------------------
+    press = f'''
+{opener("Press", "Terrezano's and Domenico's have each been on national television once. Both times, we were told it was a commercial.", [("Press", "/press/")])}
+<section style="padding-top:0"><div class="wrap split top">
+  <div class="copy">
+    <h2>Saturday Night Live, 2017</h2>
+    <p>Terrezano's made its television debut in "Italian Restaurant," which aired on the Season 43 premiere of <em>Saturday Night Live</em> on September 30, 2017, the same night we opened. Three couples taste the pasta and love it. Then a man in a suit explains where the pasta actually came from, and one couple takes the news very personally.</p>
+    <dl class="credits">
+      <dt>Host</dt><dd>Ryan Gosling, as the fiancé</dd>
+      <dt>With</dt><dd>Cecily Strong, the fiancée who is fifty percent Italian</dd>
+      <dt>Chef</dt><dd>Beck Bennett, as Chef Luigi Marinara</dd>
+      <dt>The suit</dt><dd>Mikey Day</dd>
+      <dt>Mark</dt><dd>Chris Redd</dd>
+    </dl>
+    <a class="more" href="https://www.youtube.com/watch?v=kwCQDbzBerI" rel="noopener">Watch "Italian Restaurant"</a>
+  </div>
+  <div class="copy">
+    <h2>Saturday Night Live, 2018</h2>
+    <p>One year later, almost to the day, Domenico's appeared in "Coffee Shop" on the Season 44 premiere, September 29, 2018. Three couples love their Americanos until a familiar man in a suit arrives with another announcement. A pair of newlyweds, one day married, do not take it well.</p>
+    <dl class="credits">
+      <dt>Host</dt><dd>Adam Driver, as the husband</dd>
+      <dt>With</dt><dd>Cecily Strong, as his new wife</dd>
+      <dt>The suit</dt><dd>Mikey Day</dd>
+      <dt>Also</dt><dd>Melissa Villaseñor, Beck Bennett, Heidi Gardner, Ego Nwodim, Chris Redd</dd>
+    </dl>
+    <a class="more" href="https://www.youtube.com/watch?v=WkwWw753MHg" rel="noopener">Watch "Coffee Shop"</a>
+  </div>
+</div></section>
+<section class="alt tight"><div class="narrow flow">
+  <h2 style="font-size:clamp(1.7rem,3vw,2.3rem)">Further reading</h2>
+  <div class="linklist">
+    <a href="https://en.wikipedia.org/wiki/Recurring_Saturday_Night_Live_characters_and_sketches_introduced_2017%E2%80%9318" rel="noopener">Wikipedia: SNL sketches of 2017 to 2018</a>
+    <a href="https://uproxx.com/tv/snl-ryan-gosling-pizza-hut-sketch/" rel="noopener">Uproxx on the 2017 sketch</a>
+    <a href="https://tvline.com/2018/09/30/saturday-night-live-premiere-recap-adam-driver-best-worst-sketches-snl-video/" rel="noopener">TVLine on the 2018 premiere</a>
+  </div>
+  <p class="muted">This site is a fan tribute and is not affiliated with NBC or Saturday Night Live.</p>
+</div></section>
+'''
+    pages["/press/"] = page("/press/", "Press | Terrezano's and Domenico's on Saturday Night Live",
+        "Terrezano's and Domenico's first appeared in the SNL sketches Italian Restaurant (2017, Ryan Gosling and Cecily Strong) and Coffee Shop (2018, Adam Driver and Cecily Strong). Air dates, cast and where to watch.",
+        press, None, [{"@context": "https://schema.org", "@type": "TVEpisode", "name": "Ryan Gosling / Jay-Z", "episodeNumber": 1, "datePublished": "2017-09-30",
+                       "partOfSeason": {"@type": "TVSeason", "seasonNumber": 43}, "partOfSeries": {"@type": "TVSeries", "name": "Saturday Night Live"}},
+                      {"@context": "https://schema.org", "@type": "TVEpisode", "name": "Adam Driver / Kanye West", "episodeNumber": 1, "datePublished": "2018-09-29",
+                       "partOfSeason": {"@type": "TVSeason", "seasonNumber": 44}, "partOfSeries": {"@type": "TVSeries", "name": "Saturday Night Live"}}],
+        [("Press", "/press/")])
+
+    # CREDITS -------------------------------------------------------------
+    rows = [l.split() for l in open(os.path.join(ROOT, "photos.txt")) if l.strip()]
+    lis = "".join(f'<li><a href="https://images.unsplash.com/photo-{pid}" rel="noopener">{esc(n.replace("-", " ").capitalize())}</a></li>' for n, pid in rows)
+    credits = f'''
+{opener("Photo credits", "Photography on this site comes from Unsplash contributors and is used under the Unsplash License. The people pictured are not the characters described.", [("Photo credits", "/credits/")])}
+<section style="padding-top:0"><div class="narrow"><ul class="flow" style="padding-left:1.2em">{lis}</ul></div></section>
+'''
+    pages["/credits/"] = page("/credits/", "Photo Credits | Terrezano's", "Photography credits for the Terrezano's tribute website.", credits, None, None, [("Photo credits", "/credits/")])
+
+    # 404 -----------------------------------------------------------------
+    lost = '''<section class="lost"><div class="wrap center" style="display:grid;gap:26px;justify-items:center">
+  <h1>This page did not come from our kitchen.</h1><hr class="rule">
+  <p class="muted measure">We looked in the back, under the pass and next door at Domenico's. It is not here.</p>
+  <div class="btn-row"><a class="btn solid" href="/">Back to Terrezano's</a><a class="btn" href="/menu/">See the menu</a></div>
 </div></section>'''
-    pages["/404"] = page("/404.html", "Page not found | Terrezano's", "This page could not be found at Terrezano's.", lost, None, None, None, "noindex")
+    pages["/404"] = page("/404.html", "Page not found | Terrezano's", "This page could not be found.", lost, None, None, None, "noindex")
 
-    # write pages
+    # write ---------------------------------------------------------------
     for path, html in pages.items():
-        if path == "/404":
-            fp = os.path.join(OUT, "404.html")
-        else:
-            d = os.path.join(OUT, path.strip("/"))
-            os.makedirs(d, exist_ok=True)
-            fp = os.path.join(d, "index.html")
-        with open(fp, "w") as f:
-            f.write(html)
-
-    # static assets
-    for name in ("styles.css", "site.js", "favicon.svg", "og.png", "apple-touch-icon.png"):
-        src = os.path.join(SRC, name)
-        if os.path.exists(src):
-            shutil.copy(src, os.path.join(OUT, name))
-
-    # sitemap + robots
-    prio = {"/": "1.0", "/menu/": "0.9", "/reservations/": "0.9", "/visit/": "0.8"}
-    urls = [p for p in pages if p != "/404"]
+        fp = os.path.join(OUT, "404.html") if path == "/404" else os.path.join(OUT, path.strip("/"), "index.html")
+        os.makedirs(os.path.dirname(fp), exist_ok=True)
+        open(fp, "w").write(html)
+    shutil.copytree(os.path.join(SRC, "img"), os.path.join(OUT, "img"))
+    for f in os.listdir(SRC):
+        p = os.path.join(SRC, f)
+        if os.path.isfile(p):
+            shutil.copy(p, OUT)
+    prio = {"/": "1.0", "/menu/": "0.9", "/reservations/": "0.9", "/domenicos/": "0.8", "/visit/": "0.8", "/chef-luigi/": "0.8"}
     sm = ['<?xml version="1.0" encoding="UTF-8"?>', '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
-    for p in urls:
-        sm.append(f"  <url><loc>{SITE}{p}</loc><lastmod>{TODAY}</lastmod><priority>{prio.get(p, '0.6')}</priority></url>")
+    sm += [f"  <url><loc>{SITE}{p}</loc><lastmod>{TODAY}</lastmod><priority>{prio.get(p, '0.6')}</priority></url>" for p in pages if p != "/404"]
     sm.append("</urlset>")
     open(os.path.join(OUT, "sitemap.xml"), "w").write("\n".join(sm) + "\n")
     open(os.path.join(OUT, "robots.txt"), "w").write(f"User-agent: *\nAllow: /\n\nSitemap: {SITE}/sitemap.xml\n")
-    open(os.path.join(OUT, "_headers"), "w").write("/*\n  X-Content-Type-Options: nosniff\n  Referrer-Policy: strict-origin-when-cross-origin\n\n/*.css\n  Cache-Control: public, max-age=3600\n/*.js\n  Cache-Control: public, max-age=3600\n")
-    print(f"Built {len(pages)} pages into {OUT}")
+    open(os.path.join(OUT, "_redirects"), "w").write("/as-seen-on-snl/ /press/ 301\n/as-seen-on-snl /press/ 301\n/private-events/ /private-dining/ 301\n/private-events /private-dining/ 301\n")
+    open(os.path.join(OUT, "_headers"), "w").write("/*\n  X-Content-Type-Options: nosniff\n  Referrer-Policy: strict-origin-when-cross-origin\n/img/*\n  Cache-Control: public, max-age=2592000, immutable\n/*.css\n  Cache-Control: public, max-age=3600\n/*.js\n  Cache-Control: public, max-age=3600\n")
+    print(f"Built {len(pages)} pages")
 
 if __name__ == "__main__":
     build()
